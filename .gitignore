@@ -1,0 +1,35 @@
+# Credenciais e tokens - NUNCA subir para o GitHub
+credentials.json
+token.json
+*.json
+
+# Pasta do app local
+.dsi24bis/
+
+# Ambiente virtual Python
+venv/
+env/
+.env/
+
+# Logs locais
+logs/
+*.log
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+*.swp
