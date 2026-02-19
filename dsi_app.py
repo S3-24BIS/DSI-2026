@@ -276,21 +276,29 @@ def event_intersects_day(ev, day: datetime.date) -> bool:
 def extrair_si_texto(texto: str):
     if not texto:
         return None
-    texto_limpo = re.sub(r'[^\w\s-]', ' ', texto)
+    texto_limpo = re.sub(r'[^\w\s\-]', ' ', texto)
 
     if re.search(r'\bSN\b', texto_limpo, flags=re.IGNORECASE):
         return "SN"
 
+    # Formato "SI -1", "SI -2" (SI negativo — sem instrução)
+    m = re.search(r'\bSI\s*-\s*(\d{1,2})', texto_limpo, flags=re.IGNORECASE)
+    if m:
+        return f"-{m.group(1)}"
+
+    # Formato "SI 1", "SI 12"
     m = re.search(r'\bSI\s+(\d{1,2})', texto_limpo, flags=re.IGNORECASE)
     if m:
         num = int(m.group(1))
         return f"{num:02d}" if num > 0 else "SN"
 
+    # Formato "S1/EB", "S12/EB"
     m = re.search(r'\bS(\d{1,2})\s*/\s*EB\b', texto_limpo, flags=re.IGNORECASE)
     if m:
         num = int(m.group(1))
         return f"{num:02d}" if num > 0 else "SN"
 
+    # Formato "SEMANA DE INSTRUÇÃO 1"
     m = re.search(r'\bSEMANA\s+DE\s+INSTRU[cç][aã]O\s*(\d{1,2})\b', texto_limpo, flags=re.IGNORECASE)
     if m:
         num = int(m.group(1))
@@ -854,9 +862,9 @@ def inserir_e_preencher_tabela(docs_service, doc_id, rows, insert_index):
         print("Erro: Tabela não encontrada")
         return
 
-    # Definir larguras das colunas (em PT — página ~450PT com margens 1cm)
+    # Larguras para preencher página A4 com margens 1cm (~500PT úteis)
     # DATA, HORA, ATIVIDADE, LOCAL, UNIF, RESP, OBS
-    larguras_pt = [68, 30, 130, 100, 30, 30, 40]
+    larguras_pt = [95, 38, 170, 125, 28, 28, 28]
 
     tabela_element_info = None
     doc_temp = docs_service.documents().get(documentId=doc_id).execute()
