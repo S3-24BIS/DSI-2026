@@ -170,23 +170,10 @@ def get_credentials():
     )
 
     st.markdown("## 🔐 Autenticação necessária")
-    st.markdown("Clique no botão abaixo para fazer login com sua conta Google:")
-    st.markdown(f"""
-        <a href="{auth_url}" target="_self">
-            <button style="
-                background-color: #4285F4;
-                color: white;
-                padding: 12px 24px;
-                border: none;
-                border-radius: 6px;
-                font-size: 16px;
-                cursor: pointer;
-                font-family: Arial;
-            ">
-                🔑 Entrar com Google
-            </button>
-        </a>
-    """, unsafe_allow_html=True)
+    st.markdown("Clique no link abaixo para fazer login com sua conta Google:")
+    st.markdown(f"### [🔑 Clique aqui para Entrar com Google]({auth_url})")
+    st.info("💡 Se o link não abrir, copie e cole no navegador:")
+    st.code(auth_url)
     st.stop()
 
 # =========================================================
