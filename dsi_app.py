@@ -723,16 +723,7 @@ def criar_google_doc(creds, titulo_doc, num_fmt, ref_date, ini_s, fim_s, ini_s1,
         conteudo.append("-")
     conteudo.append("")
 
-    conteudo.append("4. FORMATURA GERAL")
-    conteudo.append(f" 1) Finalidade: {fg.get('finalidade', '')}")
-    conteudo.append(f" 2) Dia: {fg.get('dia', '')}")
-    conteudo.append(f" 3) Dobrado: {fg.get('dobrado', '')}")
-    conteudo.append(f" 4) Canção: {fg.get('cancao', '')}")
-    conteudo.append(f" 5) GS: {fg.get('gs', '')}")
-    conteudo.append(f" 6) Armado e Equipado: {fg.get('armado', '')}")
-    conteudo.append("")
-
-    conteudo.append("5. PERÍODO")
+    conteudo.append("4. PERÍODO")
     conteudo.append("")
     conteudo.append(f" a. Semana (S) - {fmt_periodo_titulo(ini_s, fim_s)}")
     conteudo.append("")
@@ -775,26 +766,40 @@ def criar_google_doc(creds, titulo_doc, num_fmt, ref_date, ini_s, fim_s, ini_s1,
     end_index = doc_atual.get('body').get('content')[-1].get('endIndex')
 
     conteudo_futuras = []
-    conteudo_futuras.append("\n6. ATIVIDADES FUTURAS")
+
+    # Item 5: FORMATURA GERAL
+    conteudo_futuras.append("\n5. FORMATURA GERAL")
+    conteudo_futuras.append(f" 1) Finalidade: {fg.get('finalidade', '')}")
+    conteudo_futuras.append(f" 2) Dia: {fg.get('dia', '')}")
+    conteudo_futuras.append(f" 3) Dobrado: {fg.get('dobrado', '')}")
+    conteudo_futuras.append(f" 4) Canção: {fg.get('cancao', '')}")
+    conteudo_futuras.append(f" 5) GS: {fg.get('gs', '')}")
+    conteudo_futuras.append(f" 6) Armado e Equipado: {fg.get('armado', '')}")
+    conteudo_futuras.append("")
+
+    # Item 6: ATIVIDADES FUTURAS (autonumerado)
+    conteudo_futuras.append("6. ATIVIDADES FUTURAS")
     if ativ_futuras.strip():
-        for linha in ativ_futuras.strip().split("\n"):
-            conteudo_futuras.append(f" {linha}")
+        for i, linha in enumerate([l for l in ativ_futuras.strip().split("\n") if l.strip()], 1):
+            conteudo_futuras.append(f" {i}. {linha.strip()}")
     else:
         conteudo_futuras.append(" ________________________________________________")
     conteudo_futuras.append("")
 
+    # Item 7: SU (autonumerado)
     conteudo_futuras.append("7. SU")
     if su.strip():
-        for linha in su.strip().split("\n"):
-            conteudo_futuras.append(f" {linha}")
+        for i, linha in enumerate([l for l in su.strip().split("\n") if l.strip()], 1):
+            conteudo_futuras.append(f" {i}. {linha.strip()}")
     else:
-        conteudo_futuras.append(" 1) ______________________________________")
+        conteudo_futuras.append(" 1. ______________________________________")
     conteudo_futuras.append("")
 
+    # Item 8: ATIVIDADES PLANEJADAS E NÃO EXECUTADAS (autonumerado)
     conteudo_futuras.append("8. ATIVIDADES PLANEJADAS E NÃO EXECUTADAS")
     if ativ_nao_exec.strip():
-        for linha in ativ_nao_exec.strip().split("\n"):
-            conteudo_futuras.append(f" {linha}")
+        for i, linha in enumerate([l for l in ativ_nao_exec.strip().split("\n") if l.strip()], 1):
+            conteudo_futuras.append(f" {i}. {linha.strip()}")
     else:
         conteudo_futuras.append(" ________________________________________________")
     conteudo_futuras.append("")
@@ -1155,8 +1160,8 @@ def formatar_documento_completo(docs_service, doc_id, rows_s, rows_s1):
         r"1\.\s+OPERAÇÕES:",
         r"2\.\s+CURSOS E ESTÁGIOS",
         r"3\.\s+DATAS COMEMORATIVAS E FERIADOS",
-        r"4\.\s+FORMATURA GERAL",
-        r"5\.\s+PERÍODO",
+        r"4\.\s+PERÍODO",
+        r"5\.\s+FORMATURA GERAL",
         r"6\.\s+ATIVIDADES FUTURAS",
         r"7\.\s+SU",
         r"8\.\s+ATIVIDADES PLANEJADAS E NÃO EXECUTADAS"
@@ -1475,8 +1480,42 @@ try:
         else:
             st.markdown("-")
 
-    # ── ITEM 4: FORMATURA GERAL (dropdown editável) ──
-    with st.expander("4. FORMATURA GERAL", expanded=False):
+    # ── ITEM 4: PERÍODO ──
+    st.markdown("**4. PERÍODO**")
+    st.markdown(f"**a. Semana (S) - {fmt_periodo_titulo(ini_s, fim_s)}**")
+
+    df_s_display = pd.DataFrame(rows_s).drop(columns=['_especial'], errors='ignore')
+
+    def highlight_especial(row):
+        idx = row.name
+        if idx < len(rows_s) and rows_s[idx].get('_especial', False):
+            return ['color: red; text-align: center'] * len(row)
+        return ['text-align: center'] * len(row)
+
+    st.dataframe(
+        df_s_display.style.apply(highlight_especial, axis=1).set_properties(**{'text-align': 'center'}),
+        use_container_width=True,
+        height=300
+    )
+
+    st.markdown(f"**b. Semana (S+1) - {fmt_periodo_titulo(ini_s1, fim_s1)}**")
+
+    df_s1_display = pd.DataFrame(rows_s1).drop(columns=['_especial'], errors='ignore')
+
+    def highlight_especial_s1(row):
+        idx = row.name
+        if idx < len(rows_s1) and rows_s1[idx].get('_especial', False):
+            return ['color: red; text-align: center'] * len(row)
+        return ['text-align: center'] * len(row)
+
+    st.dataframe(
+        df_s1_display.style.apply(highlight_especial_s1, axis=1).set_properties(**{'text-align': 'center'}),
+        use_container_width=True,
+        height=300
+    )
+
+    # ── ITEM 5: FORMATURA GERAL (dropdown editável) ──
+    with st.expander("5. FORMATURA GERAL", expanded=False):
         fg_finalidade = st.text_input("1) Finalidade:", key="fg_finalidade")
         fg_dia        = st.text_input("2) Dia:", placeholder="ex: 25/02/2026", key="fg_dia")
         fg_dobrado    = st.text_input("3) Dobrado:", key="fg_dobrado")
@@ -1484,64 +1523,53 @@ try:
         fg_gs         = st.text_input("5) GS:", key="fg_gs")
         fg_armado     = st.text_input("6) Armado e Equipado:", key="fg_armado")
 
-    # ── ITEM 5: PERÍODO ──
-    st.markdown("**5. PERÍODO**")
-    st.markdown(f"** a. Semana (S) - {fmt_periodo_titulo(ini_s, fim_s)}**")
-
-    df_s_display = pd.DataFrame(rows_s).drop(columns=['_especial'], errors='ignore')
-
-    def highlight_especial(row):
-        idx = row.name
-        if idx < len(rows_s) and rows_s[idx].get('_especial', False):
-            return ['color: red'] * len(row)
-        return [''] * len(row)
-
-    st.dataframe(df_s_display.style.apply(highlight_especial, axis=1), height=300)
-
-    st.markdown(f"** b. 2. Semana (S+1) - {fmt_periodo_titulo(ini_s1, fim_s1)}**")
-
-    df_s1_display = pd.DataFrame(rows_s1).drop(columns=['_especial'], errors='ignore')
-
-    def highlight_especial_s1(row):
-        idx = row.name
-        if idx < len(rows_s1) and rows_s1[idx].get('_especial', False):
-            return ['color: red'] * len(row)
-        return [''] * len(row)
-
-    st.dataframe(df_s1_display.style.apply(highlight_especial_s1, axis=1), height=300)
-
-    # ── ITEM 6: ATIVIDADES FUTURAS (dropdown editável) ──
+    # ── ITEM 6: ATIVIDADES FUTURAS (dropdown com autonumeração) ──
     with st.expander("6. ATIVIDADES FUTURAS", expanded=False):
-        st.caption("Digite uma atividade por linha")
-        ativ_futuras = st.text_area(
+        st.caption("Digite uma atividade por linha — a numeração será automática")
+        ativ_futuras_raw = st.text_area(
             "Atividades futuras:",
-            placeholder="Ex:\n1. EAVS - 23 a 27 fev 26\n2. Estg Plj Op Selva - 23 a 28 fev 26",
+            placeholder="Ex:\nEAVS - 23 a 27 fev 26\nEstg Plj Op Selva - 23 a 28 fev 26",
             height=200,
             key="ativ_futuras",
             label_visibility="collapsed"
         )
+        if ativ_futuras_raw.strip():
+            st.markdown("**Preview:**")
+            for i, linha in enumerate(ativ_futuras_raw.strip().split("\n"), 1):
+                if linha.strip():
+                    st.markdown(f"{i}. {linha.strip()}")
 
-    # ── ITEM 7: SU (dropdown editável) ──
+    # ── ITEM 7: SU (dropdown com autonumeração) ──
     with st.expander("7. SU", expanded=False):
-        st.caption("Digite um item por linha")
-        su_texto = st.text_area(
+        st.caption("Digite um item por linha — a numeração será automática")
+        su_raw = st.text_area(
             "SU:",
-            placeholder="Ex:\n1. S/A\n2. S/A\n3. S/A",
+            placeholder="Ex:\nS/A\nS/A\nS/A",
             height=120,
             key="su_texto",
             label_visibility="collapsed"
         )
+        if su_raw.strip():
+            st.markdown("**Preview:**")
+            for i, linha in enumerate(su_raw.strip().split("\n"), 1):
+                if linha.strip():
+                    st.markdown(f"{i}. {linha.strip()}")
 
-    # ── ITEM 8: ATIVIDADES PLANEJADAS E NÃO EXECUTADAS (dropdown editável) ──
+    # ── ITEM 8: ATIVIDADES PLANEJADAS E NÃO EXECUTADAS (dropdown com autonumeração) ──
     with st.expander("8. ATIVIDADES PLANEJADAS E NÃO EXECUTADAS", expanded=False):
-        st.caption("Digite uma atividade por linha")
-        ativ_nao_exec = st.text_area(
+        st.caption("Digite uma atividade por linha — a numeração será automática")
+        ativ_nao_exec_raw = st.text_area(
             "Atividades não executadas:",
-            placeholder="Ex:\n1. Reu componentes ASA\n2. Simpósio Gerenciamento de Crises",
+            placeholder="Ex:\nReu componentes ASA\nSimpósio Gerenciamento de Crises",
             height=150,
             key="ativ_nao_exec",
             label_visibility="collapsed"
         )
+        if ativ_nao_exec_raw.strip():
+            st.markdown("**Preview:**")
+            for i, linha in enumerate(ativ_nao_exec_raw.strip().split("\n"), 1):
+                if linha.strip():
+                    st.markdown(f"{i}. {linha.strip()}")
 
 except Exception as e:
     st.error(f"❌ Erro no sistema: {e}")
