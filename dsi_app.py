@@ -93,6 +93,7 @@ def validar_datas(ini: datetime.date, fim: datetime.date) -> bool:
     return True
 
 def registrar_log(acao: str, detalhes: str = ""):
+    """Registra ações no console (sem arquivo local na nuvem)"""
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{timestamp}] {acao} - {detalhes}")
 
@@ -101,8 +102,14 @@ def registrar_log(acao: str, detalhes: str = ""):
 # =========================================================
 
 def get_credentials():
+    """
+    Autenticação OAuth adaptada para Streamlit Cloud.
+    Usa redirect_uri em vez de servidor local.
+    Credenciais ficam nos Secrets do Streamlit.
+    """
     creds = None
 
+    # 1. Tenta usar token salvo na sessão
     if "token_data" in st.session_state:
         try:
             creds = Credentials.from_authorized_user_info(
@@ -111,6 +118,7 @@ def get_credentials():
         except Exception:
             creds = None
 
+    # 2. Renova token expirado se tiver refresh_token
     if creds and creds.expired and creds.refresh_token:
         try:
             creds.refresh(Request())
@@ -119,9 +127,11 @@ def get_credentials():
         except Exception:
             creds = None
 
+    # 3. Token válido — usa diretamente
     if creds and creds.valid:
         return creds
 
+    # 4. Carrega configurações do OAuth dos Secrets
     try:
         client_config = json.loads(st.secrets["GOOGLE_CREDENTIALS"])
         redirect_uri = st.secrets["REDIRECT_URI"]
@@ -130,6 +140,7 @@ def get_credentials():
         st.info("Configure GOOGLE_CREDENTIALS e REDIRECT_URI nos Secrets do Streamlit Cloud.")
         st.stop()
 
+    # 5. Verifica se voltou do login Google com o código de autorização
     params = st.query_params
     if "code" in params:
         try:
@@ -147,6 +158,7 @@ def get_credentials():
             st.error(f"❌ Erro ao processar login: {e}")
             st.stop()
 
+    # 6. Redireciona para página de login do Google
     flow = Flow.from_client_config(
         client_config,
         scopes=SCOPES,
@@ -156,10 +168,6 @@ def get_credentials():
         prompt="consent",
         access_type="offline"
     )
-
-    # DEBUG TEMPORÁRIO - remover após resolver o problema
-    st.warning("🔍 DEBUG - URL gerada:")
-    st.code(auth_url)
 
     st.markdown("## 🔐 Autenticação necessária")
     st.markdown("Clique no botão abaixo para fazer login com sua conta Google:")
@@ -651,6 +659,7 @@ def exportar_excel(rows_s, rows_s1, num_fmt, si, fase, operacoes_linhas):
         return output.getvalue().encode('utf-8')
 
 def salvar_historico(num_dsi: int, periodo: str, doc_id: str):
+    """Salva histórico na session_state (sem arquivo local na nuvem)"""
     try:
         if "historico" not in st.session_state:
             st.session_state.historico = []
