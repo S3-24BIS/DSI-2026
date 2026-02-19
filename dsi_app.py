@@ -1489,13 +1489,26 @@ try:
     def highlight_especial(row):
         idx = row.name
         if idx < len(rows_s) and rows_s[idx].get('_especial', False):
-            return ['color: red; text-align: center'] * len(row)
-        return ['text-align: center'] * len(row)
+            return ['color: red; text-align: center; vertical-align: middle'] * len(row)
+        return ['text-align: center; vertical-align: middle'] * len(row)
 
     st.dataframe(
-        df_s_display.style.apply(highlight_especial, axis=1).set_properties(**{'text-align': 'center'}),
+        df_s_display.style.apply(highlight_especial, axis=1).set_properties(**{
+            'text-align': 'center',
+            'vertical-align': 'middle',
+            'padding': '2px 4px'
+        }),
         use_container_width=True,
-        height=300
+        height=300,
+        column_config={
+            "DATA":       st.column_config.TextColumn("DATA",       width=110),
+            "HORA":       st.column_config.TextColumn("HORA",       width=60),
+            "ATIVIDADE":  st.column_config.TextColumn("ATIVIDADE",  width=280),
+            "LOCAL":      st.column_config.TextColumn("LOCAL",      width=200),
+            "UNIF":       st.column_config.TextColumn("UNIF",       width=55),
+            "RESP":       st.column_config.TextColumn("RESP",       width=55),
+            "OBS":        st.column_config.TextColumn("OBS",        width=55),
+        }
     )
 
     st.markdown(f"**b. Semana (S+1) - {fmt_periodo_titulo(ini_s1, fim_s1)}**")
@@ -1505,13 +1518,26 @@ try:
     def highlight_especial_s1(row):
         idx = row.name
         if idx < len(rows_s1) and rows_s1[idx].get('_especial', False):
-            return ['color: red; text-align: center'] * len(row)
-        return ['text-align: center'] * len(row)
+            return ['color: red; text-align: center; vertical-align: middle'] * len(row)
+        return ['text-align: center; vertical-align: middle'] * len(row)
 
     st.dataframe(
-        df_s1_display.style.apply(highlight_especial_s1, axis=1).set_properties(**{'text-align': 'center'}),
+        df_s1_display.style.apply(highlight_especial_s1, axis=1).set_properties(**{
+            'text-align': 'center',
+            'vertical-align': 'middle',
+            'padding': '2px 4px'
+        }),
         use_container_width=True,
-        height=300
+        height=300,
+        column_config={
+            "DATA":       st.column_config.TextColumn("DATA",       width=110),
+            "HORA":       st.column_config.TextColumn("HORA",       width=60),
+            "ATIVIDADE":  st.column_config.TextColumn("ATIVIDADE",  width=280),
+            "LOCAL":      st.column_config.TextColumn("LOCAL",      width=200),
+            "UNIF":       st.column_config.TextColumn("UNIF",       width=55),
+            "RESP":       st.column_config.TextColumn("RESP",       width=55),
+            "OBS":        st.column_config.TextColumn("OBS",        width=55),
+        }
     )
 
     # ── ITEM 5: FORMATURA GERAL (dropdown editável) ──
