@@ -854,6 +854,41 @@ def inserir_e_preencher_tabela(docs_service, doc_id, rows, insert_index):
         print("Erro: Tabela não encontrada")
         return
 
+    # Definir larguras das colunas (em PT — página ~450PT com margens 1cm)
+    # DATA, HORA, ATIVIDADE, LOCAL, UNIF, RESP, OBS
+    larguras_pt = [68, 30, 130, 100, 30, 30, 40]
+
+    tabela_element_info = None
+    doc_temp = docs_service.documents().get(documentId=doc_id).execute()
+    for el in reversed(doc_temp.get('body').get('content')):
+        if 'table' in el:
+            tabela_element_info = el
+            break
+
+    if tabela_element_info:
+        tbl_start = tabela_element_info['startIndex']
+        col_width_requests = []
+        for col_idx, largura in enumerate(larguras_pt):
+            col_width_requests.append({
+                'updateTableColumnProperties': {
+                    'tableStartLocation': {'index': tbl_start},
+                    'columnIndices': [col_idx],
+                    'tableColumnProperties': {
+                        'widthType': 'FIXED_WIDTH',
+                        'width': {'magnitude': largura, 'unit': 'PT'}
+                    },
+                    'fields': 'widthType,width'
+                }
+            })
+        try:
+            docs_service.documents().batchUpdate(
+                documentId=doc_id,
+                body={'requests': col_width_requests}
+            ).execute()
+            time.sleep(0.3)
+        except Exception as e:
+            print(f"Erro ao definir larguras de colunas: {e}")
+
     grupos_data = {}
     data_atual = None
     for idx, row_data in enumerate(rows):
@@ -1049,6 +1084,7 @@ def aplicar_formatacao_tabela(docs_service, doc_id, rows, grupos_data):
             for col_idx in range(len(row_cells)):
                 cell_content = row_cells[col_idx].get('content', [])
                 if cell_content:
+                    # Centralização horizontal do texto
                     requests.append({
                         'updateParagraphStyle': {
                             'paragraphStyle': {'alignment': 'CENTER'},
@@ -1057,6 +1093,28 @@ def aplicar_formatacao_tabela(docs_service, doc_id, rows, grupos_data):
                                 'startIndex': cell_content[0].get('startIndex'),
                                 'endIndex': cell_content[0].get('endIndex') - 1
                             }
+                        }
+                    })
+                    # Centralização vertical + padding reduzido
+                    requests.append({
+                        'updateTableCellStyle': {
+                            'tableRange': {
+                                'tableCellLocation': {
+                                    'tableStartLocation': {'index': table_start},
+                                    'rowIndex': row_idx,
+                                    'columnIndex': col_idx
+                                },
+                                'rowSpan': 1,
+                                'columnSpan': 1
+                            },
+                            'tableCellStyle': {
+                                'contentAlignment': 'MIDDLE',
+                                'paddingTop':    {'magnitude': 2, 'unit': 'PT'},
+                                'paddingBottom': {'magnitude': 2, 'unit': 'PT'},
+                                'paddingLeft':   {'magnitude': 3, 'unit': 'PT'},
+                                'paddingRight':  {'magnitude': 3, 'unit': 'PT'},
+                            },
+                            'fields': 'contentAlignment,paddingTop,paddingBottom,paddingLeft,paddingRight'
                         }
                     })
 
