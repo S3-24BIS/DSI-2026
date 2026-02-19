@@ -1481,64 +1481,52 @@ try:
             st.markdown("-")
 
     # ── ITEM 4: PERÍODO ──
+    def render_tabela_html(rows, especial_list):
+        cols = ["DATA", "HORA", "ATIVIDADE", "LOCAL", "UNIF", "RESP", "OBS"]
+        widths = {"DATA": "11%", "HORA": "5%", "ATIVIDADE": "32%", "LOCAL": "22%", "UNIF": "6%", "RESP": "6%", "OBS": "8%"}
+
+        html = """
+        <style>
+        .dsi-table { width:100%; border-collapse:collapse; font-size:12px; font-family:Calibri,Arial,sans-serif; }
+        .dsi-table th { background:#555; color:white; text-align:center; vertical-align:middle; padding:4px 3px; border:1px solid #999; font-weight:bold; }
+        .dsi-table td { text-align:center; vertical-align:middle; padding:3px 3px; border:1px solid #ccc; line-height:1.2; }
+        .dsi-table tr.alt { background:#ddd; }
+        .dsi-table tr.normal { background:#fff; }
+        .dsi-table tr.especial td { color:red; background:#fdd; }
+        </style>
+        <table class="dsi-table"><thead><tr>
+        """
+        for c in cols:
+            html += f'<th style="width:{widths[c]}">{c}</th>'
+        html += "</tr></thead><tbody>"
+
+        alt = True
+        ultimo_data = None
+        for idx, row in enumerate(rows):
+            eh_esp = especial_list[idx] if idx < len(especial_list) else False
+            if row.get("DATA"):
+                ultimo_data = row.get("DATA")
+                alt = not alt
+            cls = "especial" if eh_esp else ("alt" if alt else "normal")
+            html += f'<tr class="{cls}">'
+            for c in cols:
+                val = row.get(c, "") or ""
+                html += f"<td>{val}</td>"
+            html += "</tr>"
+
+        html += "</tbody></table>"
+        return html
+
     st.markdown("**4. PERÍODO**")
     st.markdown(f"**a. Semana (S) - {fmt_periodo_titulo(ini_s, fim_s)}**")
+    especial_s = [r.get('_especial', False) for r in rows_s]
+    st.markdown(render_tabela_html(rows_s, especial_s), unsafe_allow_html=True)
 
-    df_s_display = pd.DataFrame(rows_s).drop(columns=['_especial'], errors='ignore')
-
-    def highlight_especial(row):
-        idx = row.name
-        if idx < len(rows_s) and rows_s[idx].get('_especial', False):
-            return ['color: red; text-align: center; vertical-align: middle'] * len(row)
-        return ['text-align: center; vertical-align: middle'] * len(row)
-
-    st.dataframe(
-        df_s_display.style.apply(highlight_especial, axis=1).set_properties(**{
-            'text-align': 'center',
-            'vertical-align': 'middle',
-            'padding': '2px 4px'
-        }),
-        use_container_width=True,
-        height=300,
-        column_config={
-            "DATA":       st.column_config.TextColumn("DATA",       width=110),
-            "HORA":       st.column_config.TextColumn("HORA",       width=60),
-            "ATIVIDADE":  st.column_config.TextColumn("ATIVIDADE",  width=280),
-            "LOCAL":      st.column_config.TextColumn("LOCAL",      width=200),
-            "UNIF":       st.column_config.TextColumn("UNIF",       width=55),
-            "RESP":       st.column_config.TextColumn("RESP",       width=55),
-            "OBS":        st.column_config.TextColumn("OBS",        width=55),
-        }
-    )
-
+    st.markdown("<br>", unsafe_allow_html=True)
     st.markdown(f"**b. Semana (S+1) - {fmt_periodo_titulo(ini_s1, fim_s1)}**")
-
-    df_s1_display = pd.DataFrame(rows_s1).drop(columns=['_especial'], errors='ignore')
-
-    def highlight_especial_s1(row):
-        idx = row.name
-        if idx < len(rows_s1) and rows_s1[idx].get('_especial', False):
-            return ['color: red; text-align: center; vertical-align: middle'] * len(row)
-        return ['text-align: center; vertical-align: middle'] * len(row)
-
-    st.dataframe(
-        df_s1_display.style.apply(highlight_especial_s1, axis=1).set_properties(**{
-            'text-align': 'center',
-            'vertical-align': 'middle',
-            'padding': '2px 4px'
-        }),
-        use_container_width=True,
-        height=300,
-        column_config={
-            "DATA":       st.column_config.TextColumn("DATA",       width=110),
-            "HORA":       st.column_config.TextColumn("HORA",       width=60),
-            "ATIVIDADE":  st.column_config.TextColumn("ATIVIDADE",  width=280),
-            "LOCAL":      st.column_config.TextColumn("LOCAL",      width=200),
-            "UNIF":       st.column_config.TextColumn("UNIF",       width=55),
-            "RESP":       st.column_config.TextColumn("RESP",       width=55),
-            "OBS":        st.column_config.TextColumn("OBS",        width=55),
-        }
-    )
+    especial_s1 = [r.get('_especial', False) for r in rows_s1]
+    st.markdown(render_tabela_html(rows_s1, especial_s1), unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
 
     # ── ITEM 5: FORMATURA GERAL (dropdown editável) ──
     with st.expander("5. FORMATURA GERAL", expanded=False):
