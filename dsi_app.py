@@ -666,7 +666,10 @@ def salvar_historico(num_dsi: int, periodo: str, doc_id: str):
 # =========================================================
 
 def criar_google_doc(creds, titulo_doc, num_fmt, ref_date, ini_s, fim_s, ini_s1, fim_s1,
-                      si, fase, operacoes_linhas, bullets_cursos, bullets_datas, rows_s, rows_s1):
+                      si, fase, operacoes_linhas, bullets_cursos, bullets_datas, rows_s, rows_s1,
+                      fg=None, ativ_futuras="", su="", ativ_nao_exec=""):
+    if fg is None:
+        fg = {"finalidade": "", "dia": "", "dobrado": "", "cancao": "", "gs": "", "armado": ""}
     docs_service = build('docs', 'v1', credentials=creds)
 
     doc = docs_service.documents().create(body={'title': titulo_doc}).execute()
@@ -721,11 +724,12 @@ def criar_google_doc(creds, titulo_doc, num_fmt, ref_date, ini_s, fim_s, ini_s1,
     conteudo.append("")
 
     conteudo.append("4. FORMATURA GERAL")
-    conteudo.append(" 1) Finalidade: _______________________________________")
-    conteudo.append(" 2) Dia: ___/___/______")
-    conteudo.append(" 3) Dobrado: ?")
-    conteudo.append(" 4) GS: _______________________")
-    conteudo.append(" 5) Armado e Equipado: ?")
+    conteudo.append(f" 1) Finalidade: {fg.get('finalidade', '')}")
+    conteudo.append(f" 2) Dia: {fg.get('dia', '')}")
+    conteudo.append(f" 3) Dobrado: {fg.get('dobrado', '')}")
+    conteudo.append(f" 4) Canção: {fg.get('cancao', '')}")
+    conteudo.append(f" 5) GS: {fg.get('gs', '')}")
+    conteudo.append(f" 6) Armado e Equipado: {fg.get('armado', '')}")
     conteudo.append("")
 
     conteudo.append("5. PERÍODO")
@@ -772,15 +776,27 @@ def criar_google_doc(creds, titulo_doc, num_fmt, ref_date, ini_s, fim_s, ini_s1,
 
     conteudo_futuras = []
     conteudo_futuras.append("\n6. ATIVIDADES FUTURAS")
-    conteudo_futuras.append(" ________________________________________________")
-    conteudo_futuras.append(" ________________________________________________")
-    conteudo_futuras.append(" ________________________________________________")
+    if ativ_futuras.strip():
+        for linha in ativ_futuras.strip().split("\n"):
+            conteudo_futuras.append(f" {linha}")
+    else:
+        conteudo_futuras.append(" ________________________________________________")
     conteudo_futuras.append("")
 
     conteudo_futuras.append("7. SU")
-    conteudo_futuras.append(" 1) ______________________________________")
-    conteudo_futuras.append(" 2) ______________________________________")
-    conteudo_futuras.append(" 3) ______________________________________")
+    if su.strip():
+        for linha in su.strip().split("\n"):
+            conteudo_futuras.append(f" {linha}")
+    else:
+        conteudo_futuras.append(" 1) ______________________________________")
+    conteudo_futuras.append("")
+
+    conteudo_futuras.append("8. ATIVIDADES PLANEJADAS E NÃO EXECUTADAS")
+    if ativ_nao_exec.strip():
+        for linha in ativ_nao_exec.strip().split("\n"):
+            conteudo_futuras.append(f" {linha}")
+    else:
+        conteudo_futuras.append(" ________________________________________________")
     conteudo_futuras.append("")
 
     meses_completos = [
@@ -1142,7 +1158,8 @@ def formatar_documento_completo(docs_service, doc_id, rows_s, rows_s1):
         r"4\.\s+FORMATURA GERAL",
         r"5\.\s+PERÍODO",
         r"6\.\s+ATIVIDADES FUTURAS",
-        r"7\.\s+SU"
+        r"7\.\s+SU",
+        r"8\.\s+ATIVIDADES PLANEJADAS E NÃO EXECUTADAS"
     ]
 
     for padrao in padroes_negrito:
@@ -1330,6 +1347,18 @@ try:
     rows_s1 = construir_tabela_semana(srv, ini_s1, fim_s1, incluir_cmt, incluir_pgi, feriados)
 
     if st.session_state.exportar and st.session_state.doc_criado is None:
+        fg = {
+            "finalidade": st.session_state.get("fg_finalidade", ""),
+            "dia": st.session_state.get("fg_dia", ""),
+            "dobrado": st.session_state.get("fg_dobrado", ""),
+            "cancao": st.session_state.get("fg_cancao", ""),
+            "gs": st.session_state.get("fg_gs", ""),
+            "armado": st.session_state.get("fg_armado", ""),
+        }
+        ativ_futuras_txt = st.session_state.get("ativ_futuras", "")
+        su_txt = st.session_state.get("su_texto", "")
+        ativ_nao_exec_txt = st.session_state.get("ativ_nao_exec", "")
+
         with st.spinner("📝 Criando documento no Google Docs..."):
             try:
                 registrar_log("EXPORTACAO_INICIADA", f"DSI {num_fmt}")
@@ -1337,7 +1366,11 @@ try:
                     creds, titulo_dsi, num_fmt, ref_date,
                     ini_s, fim_s, ini_s1, fim_s1,
                     si, fase, operacoes_linhas, bullets_cursos, bullets_datas,
-                    rows_s, rows_s1
+                    rows_s, rows_s1,
+                    fg=fg,
+                    ativ_futuras=ativ_futuras_txt,
+                    su=su_txt,
+                    ativ_nao_exec=ativ_nao_exec_txt
                 )
 
                 salvar_historico(int(num_doc), periodo_titulo, doc_id)
@@ -1442,13 +1475,16 @@ try:
         else:
             st.markdown("-")
 
-    st.markdown("**4. FORMATURA GERAL**")
-    st.markdown(" 1) Finalidade: _______________________________________")
-    st.markdown(" 2) Dia: ___/___/______")
-    st.markdown(" 3) Dobrado: ?")
-    st.markdown(" 4) GS: _______________________")
-    st.markdown(" 5) Armado e Equipado: ?")
+    # ── ITEM 4: FORMATURA GERAL (dropdown editável) ──
+    with st.expander("4. FORMATURA GERAL", expanded=False):
+        fg_finalidade = st.text_input("1) Finalidade:", key="fg_finalidade")
+        fg_dia        = st.text_input("2) Dia:", placeholder="ex: 25/02/2026", key="fg_dia")
+        fg_dobrado    = st.text_input("3) Dobrado:", key="fg_dobrado")
+        fg_cancao     = st.text_input("4) Canção:", key="fg_cancao")
+        fg_gs         = st.text_input("5) GS:", key="fg_gs")
+        fg_armado     = st.text_input("6) Armado e Equipado:", key="fg_armado")
 
+    # ── ITEM 5: PERÍODO ──
     st.markdown("**5. PERÍODO**")
     st.markdown(f"** a. Semana (S) - {fmt_periodo_titulo(ini_s, fim_s)}**")
 
@@ -1474,15 +1510,38 @@ try:
 
     st.dataframe(df_s1_display.style.apply(highlight_especial_s1, axis=1), height=300)
 
-    st.markdown("**6. ATIVIDADES FUTURAS**")
-    st.markdown(" ________________________________________________")
-    st.markdown(" ________________________________________________")
-    st.markdown(" ________________________________________________")
+    # ── ITEM 6: ATIVIDADES FUTURAS (dropdown editável) ──
+    with st.expander("6. ATIVIDADES FUTURAS", expanded=False):
+        st.caption("Digite uma atividade por linha")
+        ativ_futuras = st.text_area(
+            "Atividades futuras:",
+            placeholder="Ex:\n1. EAVS - 23 a 27 fev 26\n2. Estg Plj Op Selva - 23 a 28 fev 26",
+            height=200,
+            key="ativ_futuras",
+            label_visibility="collapsed"
+        )
 
-    st.markdown("**7. SU**")
-    st.markdown(" 1) ______________________________________")
-    st.markdown(" 2) ______________________________________")
-    st.markdown(" 3) ______________________________________")
+    # ── ITEM 7: SU (dropdown editável) ──
+    with st.expander("7. SU", expanded=False):
+        st.caption("Digite um item por linha")
+        su_texto = st.text_area(
+            "SU:",
+            placeholder="Ex:\n1. S/A\n2. S/A\n3. S/A",
+            height=120,
+            key="su_texto",
+            label_visibility="collapsed"
+        )
+
+    # ── ITEM 8: ATIVIDADES PLANEJADAS E NÃO EXECUTADAS (dropdown editável) ──
+    with st.expander("8. ATIVIDADES PLANEJADAS E NÃO EXECUTADAS", expanded=False):
+        st.caption("Digite uma atividade por linha")
+        ativ_nao_exec = st.text_area(
+            "Atividades não executadas:",
+            placeholder="Ex:\n1. Reu componentes ASA\n2. Simpósio Gerenciamento de Crises",
+            height=150,
+            key="ativ_nao_exec",
+            label_visibility="collapsed"
+        )
 
 except Exception as e:
     st.error(f"❌ Erro no sistema: {e}")
