@@ -98,14 +98,20 @@ def registrar_log(acao: str, detalhes: str = ""):
     print(f"[{timestamp}] {acao} - {detalhes}")
 
 # =========================================================
-# AUTH - ADAPTADA PARA NUVEM (OAuth via redirect)
+# AUTH - ADAPTADA PARA NUVEM (OAuth via redirect) - FIX PKCE
 # =========================================================
+
+def _first_param_value(x):
+    """st.query_params às vezes retorna lista."""
+    if isinstance(x, list):
+        return x[0] if x else ""
+    return x
 
 def get_credentials():
     """
     Autenticação OAuth adaptada para Streamlit Cloud.
-    Usa redirect_uri em vez de servidor local.
-    Credenciais ficam nos Secrets do Streamlit.
+    FIX: preserva PKCE (code_verifier) e state para não dar:
+         (invalid_grant) Missing code verifier
     """
     creds = None
 
@@ -135,7 +141,7 @@ def get_credentials():
     try:
         client_config = json.loads(st.secrets["GOOGLE_CREDENTIALS"])
         redirect_uri = st.secrets["REDIRECT_URI"]
-    except Exception as e:
+    except Exception:
         st.error("❌ Secrets do Google não configurados. Veja as instruções de deploy.")
         st.info("Configure GOOGLE_CREDENTIALS e REDIRECT_URI nos Secrets do Streamlit Cloud.")
         st.stop()
@@ -144,14 +150,35 @@ def get_credentials():
     params = st.query_params
     if "code" in params:
         try:
+            code = _first_param_value(params["code"])
+
+            state = st.session_state.get("oauth_state")
+            verifier = st.session_state.get("oauth_code_verifier")
+
+            if not state or not verifier:
+                st.error("❌ Sessão OAuth perdida (state/verifier). Clique para logar novamente.")
+                st.query_params.clear()
+                st.stop()
+
             flow = Flow.from_client_config(
                 client_config,
                 scopes=SCOPES,
-                redirect_uri=redirect_uri
+                redirect_uri=redirect_uri,
+                state=state
             )
-            flow.fetch_token(code=params["code"])
+
+            # ✅ FIX PRINCIPAL
+            flow.code_verifier = verifier
+
+            flow.fetch_token(code=code)
             creds = flow.credentials
+
             st.session_state.token_data = json.loads(creds.to_json())
+
+            # limpa dados do oauth
+            st.session_state.pop("oauth_state", None)
+            st.session_state.pop("oauth_code_verifier", None)
+
             st.query_params.clear()
             st.rerun()
         except Exception as e:
@@ -164,10 +191,16 @@ def get_credentials():
         scopes=SCOPES,
         redirect_uri=redirect_uri
     )
-    auth_url, _ = flow.authorization_url(
+
+    auth_url, state = flow.authorization_url(
         prompt="consent",
-        access_type="offline"
+        access_type="offline",
+        include_granted_scopes="true"
     )
+
+    # ✅ salva state e verifier para o callback
+    st.session_state["oauth_state"] = state
+    st.session_state["oauth_code_verifier"] = flow.code_verifier
 
     st.markdown("## 🔐 Autenticação necessária")
     st.markdown("Clique no link abaixo para fazer login com sua conta Google:")
@@ -281,7 +314,7 @@ def extrair_si_texto(texto: str):
     if re.search(r'\bSN\b', texto_limpo, flags=re.IGNORECASE):
         return "SN"
 
-    # Formato "SI -1", "SI -2" (SI negativo — sem instrução)
+    # Formato "SI -1", "SI -2"
     m = re.search(r'\bSI\s*-\s*(\d{1,2})', texto_limpo, flags=re.IGNORECASE)
     if m:
         return f"-{m.group(1)}"
@@ -292,7 +325,7 @@ def extrair_si_texto(texto: str):
         num = int(m.group(1))
         return f"{num:02d}" if num > 0 else "SN"
 
-    # Formato "S1/EB", "S12/EB"
+    # Formato "S1/EB"
     m = re.search(r'\bS(\d{1,2})\s*/\s*EB\b', texto_limpo, flags=re.IGNORECASE)
     if m:
         num = int(m.group(1))
@@ -830,10 +863,7 @@ def criar_google_doc(creds, titulo_doc, num_fmt, ref_date, ini_s, fim_s, ini_s1,
 
     formatar_documento_completo(docs_service, doc_id, rows_s, rows_s1)
 
-    return doc_id
-
-
-def inserir_e_preencher_tabela(docs_service, doc_id, rows, insert_index):
+    return doc_iddef inserir_e_preencher_tabela(docs_service, doc_id, rows, insert_index):
     requests_tabela = [{
         'insertTable': {
             'rows': len(rows) + 1,
@@ -1092,7 +1122,6 @@ def aplicar_formatacao_tabela(docs_service, doc_id, rows, grupos_data):
             for col_idx in range(len(row_cells)):
                 cell_content = row_cells[col_idx].get('content', [])
                 if cell_content:
-                    # Centralização horizontal do texto
                     requests.append({
                         'updateParagraphStyle': {
                             'paragraphStyle': {'alignment': 'CENTER'},
@@ -1103,7 +1132,6 @@ def aplicar_formatacao_tabela(docs_service, doc_id, rows, grupos_data):
                             }
                         }
                     })
-                    # Centralização vertical + padding reduzido
                     requests.append({
                         'updateTableCellStyle': {
                             'tableRange': {
@@ -1594,16 +1622,16 @@ try:
     st.markdown(render_tabela_html(rows_s1, especial_s1), unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # ── ITEM 5: FORMATURA GERAL (dropdown editável) ──
+    # ── ITEM 5: FORMATURA GERAL ──
     with st.expander("5. FORMATURA GERAL", expanded=False):
-        fg_finalidade = st.text_input("1) Finalidade:", key="fg_finalidade")
-        fg_dia        = st.text_input("2) Dia:", placeholder="ex: 25/02/2026", key="fg_dia")
-        fg_dobrado    = st.text_input("3) Dobrado:", key="fg_dobrado")
-        fg_cancao     = st.text_input("4) Canção:", key="fg_cancao")
-        fg_gs         = st.text_input("5) GS:", key="fg_gs")
-        fg_armado     = st.text_input("6) Armado e Equipado:", key="fg_armado")
+        st.text_input("1) Finalidade:", key="fg_finalidade")
+        st.text_input("2) Dia:", placeholder="ex: 25/02/2026", key="fg_dia")
+        st.text_input("3) Dobrado:", key="fg_dobrado")
+        st.text_input("4) Canção:", key="fg_cancao")
+        st.text_input("5) GS:", key="fg_gs")
+        st.text_input("6) Armado e Equipado:", key="fg_armado")
 
-    # ── ITEM 6: ATIVIDADES FUTURAS (dropdown com autonumeração) ──
+    # ── ITEM 6: ATIVIDADES FUTURAS ──
     with st.expander("6. ATIVIDADES FUTURAS", expanded=False):
         st.caption("Digite uma atividade por linha — a numeração será automática")
         ativ_futuras_raw = st.text_area(
@@ -1619,7 +1647,7 @@ try:
                 if linha.strip():
                     st.markdown(f"{i}. {linha.strip()}")
 
-    # ── ITEM 7: SU (dropdown com autonumeração) ──
+    # ── ITEM 7: SU ──
     with st.expander("7. SU", expanded=False):
         st.caption("Digite um item por linha — a numeração será automática")
         su_raw = st.text_area(
@@ -1635,7 +1663,7 @@ try:
                 if linha.strip():
                     st.markdown(f"{i}. {linha.strip()}")
 
-    # ── ITEM 8: ATIVIDADES PLANEJADAS E NÃO EXECUTADAS (dropdown com autonumeração) ──
+    # ── ITEM 8: ATIVIDADES PLANEJADAS E NÃO EXECUTADAS ──
     with st.expander("8. ATIVIDADES PLANEJADAS E NÃO EXECUTADAS", expanded=False):
         st.caption("Digite uma atividade por linha — a numeração será automática")
         ativ_nao_exec_raw = st.text_area(
