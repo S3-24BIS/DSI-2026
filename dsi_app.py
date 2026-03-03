@@ -864,7 +864,13 @@ def criar_google_doc(creds, titulo_doc, num_fmt, ref_date, ini_s, fim_s, ini_s1,
     formatar_documento_completo(docs_service, doc_id, rows_s, rows_s1)
 
     return doc_id
-    def inserir_e_preencher_tabela(docs_service, doc_id, rows, insert_index):
+
+
+# =========================================================
+# GOOGLE DOCS – INSERIR E FORMATAR TABELA
+# =========================================================
+
+def inserir_e_preencher_tabela(docs_service, doc_id, rows, insert_index):
     requests_tabela = [{
         'insertTable': {
             'rows': len(rows) + 1,
@@ -1575,7 +1581,6 @@ try:
         else:
             st.markdown("-")
 
-    # ── ITEM 4: PERÍODO ──
     def render_tabela_html(rows, especial_list):
         cols = ["DATA", "HORA", "ATIVIDADE", "LOCAL", "UNIF", "RESP", "OBS"]
         widths = {"DATA": "11%", "HORA": "5%", "ATIVIDADE": "32%", "LOCAL": "22%", "UNIF": "6%", "RESP": "6%", "OBS": "8%"}
@@ -1596,11 +1601,9 @@ try:
         html += "</tr></thead><tbody>"
 
         alt = True
-        ultimo_data = None
         for idx, row in enumerate(rows):
             eh_esp = especial_list[idx] if idx < len(especial_list) else False
             if row.get("DATA"):
-                ultimo_data = row.get("DATA")
                 alt = not alt
             cls = "especial" if eh_esp else ("alt" if alt else "normal")
             html += f'<tr class="{cls}">'
