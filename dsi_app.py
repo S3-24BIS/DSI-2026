@@ -863,7 +863,8 @@ def criar_google_doc(creds, titulo_doc, num_fmt, ref_date, ini_s, fim_s, ini_s1,
 
     formatar_documento_completo(docs_service, doc_id, rows_s, rows_s1)
 
-    return doc_iddef inserir_e_preencher_tabela(docs_service, doc_id, rows, insert_index):
+    return doc_id
+    def inserir_e_preencher_tabela(docs_service, doc_id, rows, insert_index):
     requests_tabela = [{
         'insertTable': {
             'rows': len(rows) + 1,
