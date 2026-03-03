@@ -110,8 +110,9 @@ def _first_param_value(x):
 def get_credentials():
     """
     Autenticação OAuth adaptada para Streamlit Cloud.
-    FIX: preserva PKCE (code_verifier) e state para não dar:
-         (invalid_grant) Missing code verifier
+    FIX: code_verifier é embutido no parâmetro 'state' da URL para
+    sobreviver ao redirect sem depender do session_state.
+    Formato: <state_original>||<code_verifier>
     """
     creds = None
 
@@ -151,12 +152,13 @@ def get_credentials():
     if "code" in params:
         try:
             code = _first_param_value(params["code"])
+            state_param = _first_param_value(params.get("state", ""))
 
-            state = st.session_state.get("oauth_state")
-            verifier = st.session_state.get("oauth_code_verifier")
-
-            if not state or not verifier:
-                st.error("❌ Sessão OAuth perdida (state/verifier). Clique para logar novamente.")
+            # Extrai state original e verifier embutido
+            if "||" in state_param:
+                original_state, verifier = state_param.split("||", 1)
+            else:
+                st.error("❌ Parâmetro state inválido no retorno do Google. Tente logar novamente.")
                 st.query_params.clear()
                 st.stop()
 
@@ -164,43 +166,38 @@ def get_credentials():
                 client_config,
                 scopes=SCOPES,
                 redirect_uri=redirect_uri,
-                state=state
+                state=original_state,
             )
-
-            # ✅ FIX PRINCIPAL
             flow.code_verifier = verifier
-
             flow.fetch_token(code=code)
+
             creds = flow.credentials
-
             st.session_state.token_data = json.loads(creds.to_json())
-
-            # limpa dados do oauth
-            st.session_state.pop("oauth_state", None)
-            st.session_state.pop("oauth_code_verifier", None)
-
             st.query_params.clear()
             st.rerun()
+
         except Exception as e:
             st.error(f"❌ Erro ao processar login: {e}")
+            st.query_params.clear()
             st.stop()
 
-    # 6. Redireciona para página de login do Google
+    # 6. Gera URL de login e emite o link
     flow = Flow.from_client_config(
         client_config,
         scopes=SCOPES,
-        redirect_uri=redirect_uri
+        redirect_uri=redirect_uri,
     )
 
     auth_url, state = flow.authorization_url(
         prompt="consent",
         access_type="offline",
-        include_granted_scopes="true"
+        include_granted_scopes="true",
     )
 
-    # ✅ salva state e verifier para o callback
-    st.session_state["oauth_state"] = state
-    st.session_state["oauth_code_verifier"] = flow.code_verifier
+    # ✅ Embutir verifier no state para sobreviver ao redirect
+    verifier = flow.code_verifier
+    combined_state = f"{state}||{verifier}"
+    auth_url = auth_url.replace(f"state={state}", f"state={combined_state}")
 
     st.markdown("## 🔐 Autenticação necessária")
     st.markdown("Clique no link abaixo para fazer login com sua conta Google:")
