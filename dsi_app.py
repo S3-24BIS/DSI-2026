@@ -283,6 +283,15 @@ def event_intersects_day(ev, day: datetime.date) -> bool:
         return False
     if is_all_day:
         return (s_date <= day) and (day < e_date)
+
+    # Evento com hora: se termina à meia-noite (00:00) do dia seguinte,
+    # trata como terminando no mesmo dia de início (evita duplicar no dia seguinte)
+    start = ev.get("start", {})
+    end   = ev.get("end",   {})
+    edt   = end.get("dateTime", "")
+    if edt and edt[11:16] == "00:00" and e_date > s_date:
+        e_date = e_date - datetime.timedelta(days=1)
+
     return (s_date <= day) and (day <= e_date)
 
 # =========================================================
@@ -676,11 +685,14 @@ def construir_tabela_semana(service, d_ini, d_fim, incluir_cmt, incluir_pgi, fer
 
     evs = dedup_by_event_id(todos)
 
+    # Dedup por título+data+hora: mantém a agenda de maior prioridade
     mapa_titulo = {}
     for e in evs:
-        s_date, _, _, hora = parse_start_end(e)
+        s_date, e_date, is_all_day, hora = parse_start_end(e)
         titulo = limpar_texto(e.get("summary", "")).strip()
-        chave_titulo = f"{titulo}_{s_date}_{hora}"
+        # Para eventos de dia inteiro, normaliza hora para "D"
+        hora_norm = "D" if is_all_day else hora
+        chave_titulo = f"{titulo}_{s_date}_{hora_norm}"
         src = e.get("_src_calendar_id", "")
         prioridade = PRIORIDADE_RESP.get(src, 50)
 
