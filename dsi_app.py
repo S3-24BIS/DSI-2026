@@ -229,11 +229,7 @@ def list_events(service, calendar_id: str, d_ini: datetime.date, d_fim: datetime
     return items
 
 def carregar_todos_eventos_paralelo(srv, d_ini, d_fim):
-    """Carrega todos os calendários em paralelo com cache por sessão."""
-    cache_key = f"eventos_{d_ini}_{d_fim}"
-    if cache_key in st.session_state:
-        return st.session_state[cache_key]
-
+    """Carrega todos os calendários em paralelo."""
     calendarios = [
         "s3", "cmt", "adj_cmdo",
         "b_mus", "cia_2", "npor",
@@ -258,7 +254,6 @@ def carregar_todos_eventos_paralelo(srv, d_ini, d_fim):
         if erros:
             st.warning(f"⚠️ Falha ao carregar: {', '.join(erros)}")
 
-    st.session_state[cache_key] = resultados
     return resultados
 
 def dedup_by_event_id(events):
@@ -689,18 +684,37 @@ def construir_tabela_semana(service, d_ini, d_fim, incluir_cmt, incluir_pgi, fer
     for cal, evs in ev_por_cal.items():
         todos.extend(evs)
 
-    # Deduplicação: por ID de evento e também por título+data (evita duplicatas entre agendas)
+    # Deduplicação: por ID e por título+data
+    # Prioridade de RESP: agendas específicas ganham do S3
+    PRIORIDADE_RESP = {
+        IDS["npor"]:     1,
+        IDS["b_mus"]:    2,
+        IDS["cia_2"]:    3,
+        IDS["adj_cmdo"]: 4,
+        IDS["cmt"]:      5,
+        IDS["pgi"]:      6,
+        IDS["s3"]:       99,  # S3 é o menos prioritário
+    }
+
     evs = dedup_by_event_id(todos)
-    vistos_titulo = set()
-    evs_final = []
+
+    # Agrupa por título+data e mantém o de maior prioridade
+    mapa_titulo = {}
     for e in evs:
         s_date, _, _, hora = parse_start_end(e)
         titulo = limpar_texto(e.get("summary", "")).strip()
         chave_titulo = f"{titulo}_{s_date}_{hora}"
-        if chave_titulo not in vistos_titulo:
-            vistos_titulo.add(chave_titulo)
-            evs_final.append(e)
-    evs = evs_final
+        src = e.get("_src_calendar_id", "")
+        prioridade = PRIORIDADE_RESP.get(src, 50)
+
+        if chave_titulo not in mapa_titulo:
+            mapa_titulo[chave_titulo] = (prioridade, e)
+        else:
+            prioridade_atual, _ = mapa_titulo[chave_titulo]
+            if prioridade < prioridade_atual:
+                mapa_titulo[chave_titulo] = (prioridade, e)
+
+    evs = [e for _, e in mapa_titulo.values()]
 
     rows = []
     cur  = d_ini
@@ -1283,11 +1297,6 @@ try:
     titulo_dsi     = f"DIRETRIZ SEMANAL DE INSTRUÇÃO {num_fmt} ({periodo_titulo})"
 
     with st.spinner("🔍 Buscando informações dos calendários..."):
-        # Pré-carrega todas as agendas em paralelo e armazena em cache na sessão
-        d_ini_cache = ini_s - datetime.timedelta(days=7)
-        d_fim_cache = fim_s1 + datetime.timedelta(days=45)
-        carregar_todos_eventos_paralelo(srv, d_ini_cache, d_fim_cache)
-
         si                  = buscar_si_duplo(srv, ini_s, fim_s, ini_s1, fim_s1)
         fase                = buscar_fase(srv, ini_s, fim_s1) or "Mdd Adm"
         operacoes_linhas    = buscar_operacoes(srv, ini_s, fim_s1)
@@ -1305,22 +1314,7 @@ try:
         for linha in ativ_futuras_linhas:
             st.write(f"  {linha}")
 
-        # Contadores por agenda (cache)
-        cache_key = f"eventos_{ini_s - datetime.timedelta(days=7)}_{fim_s1 + datetime.timedelta(days=45)}"
-        if cache_key in st.session_state:
-            st.markdown("---")
-            st.markdown("**Eventos carregados por agenda:**")
-            nomes_amigaveis = {
-                "s3": "S3", "cmt": "Cmdo", "adj_cmdo": "Adj Cmdo",
-                "b_mus": "B Mus", "cia_2": "2ª Cia", "npor": "NPOR",
-                "pgi": "PGI", "cursos": "Cursos", "datas": "Datas",
-                "si": "SI", "fase": "Fase", "operacoes": "Operações"
-            }
-            cols_debug = st.columns(4)
-            for i, (cal, evs) in enumerate(st.session_state[cache_key].items()):
-                nome = nomes_amigaveis.get(cal, cal)
-                status = f"✅ {nome}: {len(evs)}" if evs else f"⚠️ {nome}: 0"
-                cols_debug[i % 4].write(status)
+
 
     bullets_cursos = bullets_periodo(srv, IDS["cursos"], ini_s, fim_s1, incluir_responsavel=True)
     bullets_datas  = bullets_periodo(srv, IDS["datas"],  ini_s, fim_s1)
