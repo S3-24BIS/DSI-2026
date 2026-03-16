@@ -27,9 +27,9 @@ IDS = {
     "s3":       "s3.24bis03@gmail.com",
     "cmt":      "comando24bis@gmail.com",
     "adj_cmdo": "gleysonsmelo141214@gmail.com",
-    "b_mus":    "bmus24bis@gmail.com",                # ✅ B Mus
-    "cia_2":    "jfsa2017@gmail.com",                 # ✅ 2ª Cia
-    "npor":     "npor.24bis.instrutor@gmail.com",     # ✅ NPOR
+    "b_mus":    "bmus24bis@gmail.com",
+    "cia_2":    "jfsa2017@gmail.com",
+    "npor":     "npor.24bis.instrutor@gmail.com",
     "pgi":      "915a351ec7e277234d1da0e597fb14c7455f6f1a5a05eea8de837095a6e70c9e@group.calendar.google.com",
     "cursos":   "38d1be36abd6b1e2545500964d51074f66d24c36530a3ff677ef21b6b332f003@group.calendar.google.com",
     "datas":    "c9905256a40d19cc4d9954f633783c1ee96f6ad70165b5b7800b63e31ceeef1f@group.calendar.google.com",
@@ -192,7 +192,6 @@ def list_events(service, calendar_id: str, d_ini: datetime.date, d_fim: datetime
     time_min = to_dt_utc_start(d_ini).isoformat()
     time_max = to_dt_utc_end_exclusive(d_fim).isoformat()
 
-    # Nome amigável para mensagens de erro
     nome_cal = next((k for k, v in IDS.items() if v == calendar_id), calendar_id[:20])
 
     items = []
@@ -219,41 +218,33 @@ def list_events(service, calendar_id: str, d_ini: datetime.date, d_fim: datetime
     except Exception as e:
         erro = str(e)
         if "404" in erro or "notFound" in erro:
-            st.warning(f"⚠️ Agenda **{nome_cal}** não encontrada ou sem acesso. Verifique o compartilhamento.")
+            print(f"Agenda {nome_cal} não encontrada: {erro[:80]}")
         elif "403" in erro or "forbidden" in erro.lower():
-            st.warning(f"⚠️ Sem permissão para acessar a agenda **{nome_cal}**.")
+            print(f"Sem permissão: {nome_cal}")
         else:
-            st.warning(f"⚠️ Erro ao carregar agenda **{nome_cal}**: {erro[:120]}")
+            print(f"Erro agenda {nome_cal}: {erro[:80]}")
         return []
 
     return items
 
 def carregar_todos_eventos_paralelo(srv, d_ini, d_fim):
-    """Carrega todos os calendários em paralelo."""
     calendarios = [
         "s3", "cmt", "adj_cmdo",
         "b_mus", "cia_2", "npor",
         "pgi", "cursos", "datas", "si", "fase", "operacoes"
     ]
-    with ThreadPoolExecutor(max_workers=12) as executor:
+    with ThreadPoolExecutor(max_workers=6) as executor:
         futures = {
             executor.submit(list_events, srv, IDS[cal], d_ini, d_fim): cal
             for cal in calendarios
         }
         resultados = {}
-        erros = []
         for future in futures:
             cal = futures[future]
             try:
-                evs = future.result()
-                resultados[cal] = evs
+                resultados[cal] = future.result()
             except Exception as e:
-                erros.append(cal)
                 resultados[cal] = []
-
-        if erros:
-            st.warning(f"⚠️ Falha ao carregar: {', '.join(erros)}")
-
     return resultados
 
 def dedup_by_event_id(events):
@@ -481,7 +472,6 @@ def bullets_periodo(service, calendar_id: str, d_ini: datetime.date, d_fim: date
         if not s:
             continue
 
-        # Datas formatadas
         ano_inicio  = str(s_date.year)[-2:]
         data_fmt    = f"{s_date.day:02d} {formatar_mes_abreviado(s_date)} {ano_inicio}"
         if e_date and e_date != s_date:
@@ -491,7 +481,6 @@ def bullets_periodo(service, calendar_id: str, d_ini: datetime.date, d_fim: date
         else:
             periodo_fmt = data_fmt
 
-        # Cálculo de semanas
         total_dias = (e_date - s_date).days + 1
         total_sem  = round(total_dias / 7)
 
@@ -504,11 +493,9 @@ def bullets_periodo(service, calendar_id: str, d_ini: datetime.date, d_fim: date
             sem_atual       = min((dias_decorridos // 7) + 1, total_sem)
             smn_txt         = f"Smn {sem_atual}/{total_sem}"
 
-        # Local e Militares
         local     = limpar_texto(ev.get("location",    "")).strip()
         militares = limpar_texto(ev.get("description", "")).strip()
 
-        # Monta bullet — evita duplicar Smn se o título já trouxer do Calendar
         ja_tem_smn = bool(re.search(r'Smn\s+\d+/\d+', s, re.IGNORECASE))
         if ja_tem_smn:
             texto = f"{periodo_fmt} - {s}"
@@ -518,7 +505,6 @@ def bullets_periodo(service, calendar_id: str, d_ini: datetime.date, d_fim: date
         if local:
             texto += f" - {local}"
         if militares:
-            # Cada militar em linha separada
             lista_mil = [m.strip() for m in re.split(r'[,;\n]', militares) if m.strip()]
             if lista_mil:
                 texto += " - " + ", ".join(lista_mil)
@@ -588,9 +574,8 @@ def buscar_atividades_futuras(service, fim_s1: datetime.date) -> list:
                 ev["_cal_nome"] = nome_cal
             todos_eventos.extend(evs)
         except Exception as e:
-            st.warning(f"⚠️ Erro ao buscar atividades futuras ({nome_cal}): {e}")
+            print(f"Erro atividades futuras ({nome_cal}): {e}")
 
-    # ── Coleta todos os eventos válidos ───────────────────────────────────
     eventos_validos = []
     for ev in todos_eventos:
         s_date, e_date, is_all_day, _ = parse_start_end(ev)
@@ -616,7 +601,6 @@ def buscar_atividades_futuras(service, fim_s1: datetime.date) -> list:
             "e_date":  e_date_inc,
         })
 
-    # ── Aglutina eventos com mesmo nome que sejam consecutivos ou sobrepostos
     eventos_validos.sort(key=lambda x: (x["summary"], x["s_date"]))
 
     aglutinados = []
@@ -624,12 +608,10 @@ def buscar_atividades_futuras(service, fim_s1: datetime.date) -> list:
         if aglutinados and \
            aglutinados[-1]["summary"] == ev["summary"] and \
            ev["s_date"] <= aglutinados[-1]["e_date"] + datetime.timedelta(days=1):
-            # Estende o evento existente se as datas forem consecutivas ou sobrepostas
             aglutinados[-1]["e_date"] = max(aglutinados[-1]["e_date"], ev["e_date"])
         else:
             aglutinados.append({"summary": ev["summary"], "s_date": ev["s_date"], "e_date": ev["e_date"]})
 
-    # ── Remove duplicatas exatas e ordena por data de início ─────────────
     vistos = set()
     unicos = []
     for ev in aglutinados:
@@ -640,7 +622,6 @@ def buscar_atividades_futuras(service, fim_s1: datetime.date) -> list:
 
     unicos.sort(key=lambda x: x["s_date"])
 
-    # ── Monta as linhas formatadas ────────────────────────────────────────
     linhas = []
     for i, ev in enumerate(unicos, 1):
         s_date  = ev["s_date"]
@@ -661,31 +642,28 @@ def buscar_atividades_futuras(service, fim_s1: datetime.date) -> list:
     return linhas
 
 # =========================================================
-# TABELAS
+# TABELAS — sem ThreadPoolExecutor (evita Segmentation fault)
 # =========================================================
 
 def construir_tabela_semana(service, d_ini, d_fim, incluir_cmt, incluir_pgi, feriados):
-    # Carrega todas as agendas em paralelo
-    agendas = ["s3", "adj_cmdo", "b_mus", "cia_2", "npor"]
-    if incluir_cmt: agendas.append("cmt")
-    if incluir_pgi: agendas.append("pgi")
+    # Busca sequencial — segura no Streamlit Cloud
+    ev_s3   = list_events(service, IDS["s3"],       d_ini, d_fim)
+    ev_adj  = list_events(service, IDS["adj_cmdo"], d_ini, d_fim)
+    ev_bmus = list_events(service, IDS["b_mus"],    d_ini, d_fim)
+    ev_cia2 = list_events(service, IDS["cia_2"],    d_ini, d_fim)
+    ev_npor = list_events(service, IDS["npor"],     d_ini, d_fim)
 
-    with ThreadPoolExecutor(max_workers=8) as executor:
-        futures = {executor.submit(list_events, service, IDS[cal], d_ini, d_fim): cal for cal in agendas}
-        ev_por_cal = {}
-        for future in futures:
-            cal = futures[future]
-            try:
-                ev_por_cal[cal] = future.result()
-            except Exception:
-                ev_por_cal[cal] = []
+    ev_cmd = []
+    if incluir_cmt:
+        ev_cmd = list_events(service, IDS["cmt"], d_ini, d_fim)
 
-    todos = []
-    for cal, evs in ev_por_cal.items():
-        todos.extend(evs)
+    ev_pgi = []
+    if incluir_pgi:
+        ev_pgi = list_events(service, IDS["pgi"], d_ini, d_fim)
 
-    # Deduplicação: por ID e por título+data
-    # Prioridade de RESP: agendas específicas ganham do S3
+    todos = ev_s3 + ev_adj + ev_bmus + ev_cia2 + ev_npor + ev_cmd + ev_pgi
+
+    # Prioridade de RESP: agendas específicas ganham sobre S3
     PRIORIDADE_RESP = {
         IDS["npor"]:     1,
         IDS["b_mus"]:    2,
@@ -693,12 +671,11 @@ def construir_tabela_semana(service, d_ini, d_fim, incluir_cmt, incluir_pgi, fer
         IDS["adj_cmdo"]: 4,
         IDS["cmt"]:      5,
         IDS["pgi"]:      6,
-        IDS["s3"]:       99,  # S3 é o menos prioritário
+        IDS["s3"]:       99,
     }
 
     evs = dedup_by_event_id(todos)
 
-    # Agrupa por título+data e mantém o de maior prioridade
     mapa_titulo = {}
     for e in evs:
         s_date, _, _, hora = parse_start_end(e)
@@ -892,12 +869,10 @@ def criar_google_doc(creds, titulo_doc, num_fmt, ref_date, ini_s, fim_s, ini_s1,
         body={'requests': [{'insertText': {'location': {'index': 1}, 'text': texto_completo}}]}
     ).execute()
 
-    # Tabela S
     doc_atual = docs_service.documents().get(documentId=doc_id).execute()
     end_index = doc_atual['body']['content'][-1]['endIndex']
     inserir_e_preencher_tabela(docs_service, doc_id, rows_s, end_index - 1)
 
-    # Tabela S+1
     doc_atual = docs_service.documents().get(documentId=doc_id).execute()
     end_index = doc_atual['body']['content'][-1]['endIndex']
     texto_s1  = f"\n b. 2. Semana (S+1) - {fmt_periodo_titulo(ini_s1, fim_s1)}\n"
@@ -1314,8 +1289,6 @@ try:
         for linha in ativ_futuras_linhas:
             st.write(f"  {linha}")
 
-
-
     bullets_cursos = bullets_periodo(srv, IDS["cursos"], ini_s, fim_s1, incluir_responsavel=True)
     bullets_datas  = bullets_periodo(srv, IDS["datas"],  ini_s, fim_s1)
     feriados       = buscar_feriados(srv, ini_s, fim_s1)
@@ -1376,11 +1349,8 @@ try:
     st.markdown("---")
     st.markdown("### 📄 Preview do Documento")
 
-    # Container único evita conflito de DOM no Streamlit Cloud
-    preview = st.container()
-    with preview:
-     hoje = datetime.date.today()
-     st.markdown(f"""
+    hoje = datetime.date.today()
+    st.markdown(f"""
     <div style='font-size:10px; text-align:left;'>
     DSI Nº {num_fmt} - S3/24º BIS<br>
     {hoje.day} {formatar_mes_abreviado(hoje)} {str(hoje.year)[-2:]}<br>
