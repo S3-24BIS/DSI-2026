@@ -192,47 +192,73 @@ def list_events(service, calendar_id: str, d_ini: datetime.date, d_fim: datetime
     time_min = to_dt_utc_start(d_ini).isoformat()
     time_max = to_dt_utc_end_exclusive(d_fim).isoformat()
 
+    # Nome amigável para mensagens de erro
+    nome_cal = next((k for k, v in IDS.items() if v == calendar_id), calendar_id[:20])
+
     items = []
     page_token = None
-    while True:
-        res = service.events().list(
-            calendarId=calendar_id,
-            timeMin=time_min,
-            timeMax=time_max,
-            singleEvents=True,
-            orderBy="startTime",
-            maxResults=250,
-            pageToken=page_token
-        ).execute()
+    try:
+        while True:
+            res = service.events().list(
+                calendarId=calendar_id,
+                timeMin=time_min,
+                timeMax=time_max,
+                singleEvents=True,
+                orderBy="startTime",
+                maxResults=250,
+                pageToken=page_token
+            ).execute()
 
-        batch = res.get("items", [])
-        for e in batch:
-            e["_src_calendar_id"] = calendar_id
-        items.extend(batch)
-        page_token = res.get("nextPageToken")
-        if not page_token:
-            break
+            batch = res.get("items", [])
+            for e in batch:
+                e["_src_calendar_id"] = calendar_id
+            items.extend(batch)
+            page_token = res.get("nextPageToken")
+            if not page_token:
+                break
+    except Exception as e:
+        erro = str(e)
+        if "404" in erro or "notFound" in erro:
+            st.warning(f"⚠️ Agenda **{nome_cal}** não encontrada ou sem acesso. Verifique o compartilhamento.")
+        elif "403" in erro or "forbidden" in erro.lower():
+            st.warning(f"⚠️ Sem permissão para acessar a agenda **{nome_cal}**.")
+        else:
+            st.warning(f"⚠️ Erro ao carregar agenda **{nome_cal}**: {erro[:120]}")
+        return []
+
     return items
 
 def carregar_todos_eventos_paralelo(srv, d_ini, d_fim):
+    """Carrega todos os calendários em paralelo com cache por sessão."""
+    cache_key = f"eventos_{d_ini}_{d_fim}"
+    if cache_key in st.session_state:
+        return st.session_state[cache_key]
+
     calendarios = [
         "s3", "cmt", "adj_cmdo",
         "b_mus", "cia_2", "npor",
         "pgi", "cursos", "datas", "si", "fase", "operacoes"
     ]
-    with ThreadPoolExecutor(max_workers=8) as executor:
+    with ThreadPoolExecutor(max_workers=12) as executor:
         futures = {
             executor.submit(list_events, srv, IDS[cal], d_ini, d_fim): cal
             for cal in calendarios
         }
         resultados = {}
+        erros = []
         for future in futures:
             cal = futures[future]
             try:
-                resultados[cal] = future.result()
+                evs = future.result()
+                resultados[cal] = evs
             except Exception as e:
-                st.warning(f"⚠️ Erro ao carregar calendário {cal}: {e}")
+                erros.append(cal)
                 resultados[cal] = []
+
+        if erros:
+            st.warning(f"⚠️ Falha ao carregar: {', '.join(erros)}")
+
+    st.session_state[cache_key] = resultados
     return resultados
 
 def dedup_by_event_id(events):
@@ -497,7 +523,10 @@ def bullets_periodo(service, calendar_id: str, d_ini: datetime.date, d_fim: date
         if local:
             texto += f" - {local}"
         if militares:
-            texto += f" - {militares}"
+            # Cada militar em linha separada
+            lista_mil = [m.strip() for m in re.split(r'[,;\n]', militares) if m.strip()]
+            if lista_mil:
+                texto += " - " + ", ".join(lista_mil)
         if incluir_responsavel:
             texto += " - _____________"
 
@@ -641,23 +670,37 @@ def buscar_atividades_futuras(service, fim_s1: datetime.date) -> list:
 # =========================================================
 
 def construir_tabela_semana(service, d_ini, d_fim, incluir_cmt, incluir_pgi, feriados):
-    ev_s3    = list_events(service, IDS["s3"],       d_ini, d_fim)
-    ev_adj   = list_events(service, IDS["adj_cmdo"], d_ini, d_fim)
-    ev_bmus  = list_events(service, IDS["b_mus"],    d_ini, d_fim)  # ✅ B Mus
-    ev_cia2  = list_events(service, IDS["cia_2"],    d_ini, d_fim)  # ✅ 2ª Cia
-    ev_npor  = list_events(service, IDS["npor"],     d_ini, d_fim)  # ✅ NPOR
+    # Carrega todas as agendas em paralelo
+    agendas = ["s3", "adj_cmdo", "b_mus", "cia_2", "npor"]
+    if incluir_cmt: agendas.append("cmt")
+    if incluir_pgi: agendas.append("pgi")
 
-    ev_cmd = []
-    if incluir_cmt:
-        ev_cmd = list_events(service, IDS["cmt"], d_ini, d_fim)
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = {executor.submit(list_events, service, IDS[cal], d_ini, d_fim): cal for cal in agendas}
+        ev_por_cal = {}
+        for future in futures:
+            cal = futures[future]
+            try:
+                ev_por_cal[cal] = future.result()
+            except Exception:
+                ev_por_cal[cal] = []
 
-    ev_pgi = []
-    if incluir_pgi:
-        ev_pgi = list_events(service, IDS["pgi"], d_ini, d_fim)
+    todos = []
+    for cal, evs in ev_por_cal.items():
+        todos.extend(evs)
 
-    evs = dedup_by_event_id(
-        ev_s3 + ev_adj + ev_bmus + ev_cia2 + ev_npor + ev_cmd + ev_pgi
-    )
+    # Deduplicação: por ID de evento e também por título+data (evita duplicatas entre agendas)
+    evs = dedup_by_event_id(todos)
+    vistos_titulo = set()
+    evs_final = []
+    for e in evs:
+        s_date, _, _, hora = parse_start_end(e)
+        titulo = limpar_texto(e.get("summary", "")).strip()
+        chave_titulo = f"{titulo}_{s_date}_{hora}"
+        if chave_titulo not in vistos_titulo:
+            vistos_titulo.add(chave_titulo)
+            evs_final.append(e)
+    evs = evs_final
 
     rows = []
     cur  = d_ini
@@ -1240,6 +1283,11 @@ try:
     titulo_dsi     = f"DIRETRIZ SEMANAL DE INSTRUÇÃO {num_fmt} ({periodo_titulo})"
 
     with st.spinner("🔍 Buscando informações dos calendários..."):
+        # Pré-carrega todas as agendas em paralelo e armazena em cache na sessão
+        d_ini_cache = ini_s - datetime.timedelta(days=7)
+        d_fim_cache = fim_s1 + datetime.timedelta(days=45)
+        carregar_todos_eventos_paralelo(srv, d_ini_cache, d_fim_cache)
+
         si                  = buscar_si_duplo(srv, ini_s, fim_s, ini_s1, fim_s1)
         fase                = buscar_fase(srv, ini_s, fim_s1) or "Mdd Adm"
         operacoes_linhas    = buscar_operacoes(srv, ini_s, fim_s1)
@@ -1256,6 +1304,23 @@ try:
         st.write(f"**ATIVIDADES FUTURAS:** {len(ativ_futuras_linhas)}")
         for linha in ativ_futuras_linhas:
             st.write(f"  {linha}")
+
+        # Contadores por agenda (cache)
+        cache_key = f"eventos_{ini_s - datetime.timedelta(days=7)}_{fim_s1 + datetime.timedelta(days=45)}"
+        if cache_key in st.session_state:
+            st.markdown("---")
+            st.markdown("**Eventos carregados por agenda:**")
+            nomes_amigaveis = {
+                "s3": "S3", "cmt": "Cmdo", "adj_cmdo": "Adj Cmdo",
+                "b_mus": "B Mus", "cia_2": "2ª Cia", "npor": "NPOR",
+                "pgi": "PGI", "cursos": "Cursos", "datas": "Datas",
+                "si": "SI", "fase": "Fase", "operacoes": "Operações"
+            }
+            cols_debug = st.columns(4)
+            for i, (cal, evs) in enumerate(st.session_state[cache_key].items()):
+                nome = nomes_amigaveis.get(cal, cal)
+                status = f"✅ {nome}: {len(evs)}" if evs else f"⚠️ {nome}: 0"
+                cols_debug[i % 4].write(status)
 
     bullets_cursos = bullets_periodo(srv, IDS["cursos"], ini_s, fim_s1, incluir_responsavel=True)
     bullets_datas  = bullets_periodo(srv, IDS["datas"],  ini_s, fim_s1)
