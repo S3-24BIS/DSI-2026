@@ -1376,8 +1376,11 @@ try:
     st.markdown("---")
     st.markdown("### 📄 Preview do Documento")
 
-    hoje = datetime.date.today()
-    st.markdown(f"""
+    # Container único evita conflito de DOM no Streamlit Cloud
+    preview = st.container()
+    with preview:
+     hoje = datetime.date.today()
+     st.markdown(f"""
     <div style='font-size:10px; text-align:left;'>
     DSI Nº {num_fmt} - S3/24º BIS<br>
     {hoje.day} {formatar_mes_abreviado(hoje)} {str(hoje.year)[-2:]}<br>
@@ -1410,17 +1413,17 @@ try:
         for item in (bullets_datas or ["-"]):
             st.markdown(f" {item}")
 
-    def render_tabela_html(rows, especial_list):
+    def render_tabela_html(rows, especial_list, table_id="dsi"):
         cols   = ["DATA", "HORA", "ATIVIDADE", "LOCAL", "UNIF", "RESP", "OBS"]
         widths = {"DATA":"11%","HORA":"5%","ATIVIDADE":"32%","LOCAL":"22%","UNIF":"6%","RESP":"6%","OBS":"8%"}
-        html   = """
+        html   = f"""
         <style>
-        .dsi-table{width:100%;border-collapse:collapse;font-size:12px;font-family:Calibri,Arial,sans-serif;}
-        .dsi-table th{background:#555;color:white;text-align:center;vertical-align:middle;padding:4px 3px;border:1px solid #999;font-weight:bold;}
-        .dsi-table td{text-align:center;vertical-align:middle;padding:3px 3px;border:1px solid #ccc;line-height:1.2;}
-        .dsi-table tr.alt{background:#ddd;} .dsi-table tr.normal{background:#fff;}
-        .dsi-table tr.especial td{color:red;background:#fdd;}
-        </style><table class="dsi-table"><thead><tr>"""
+        #{table_id} {{width:100%;border-collapse:collapse;font-size:12px;font-family:Calibri,Arial,sans-serif;}}
+        #{table_id} th {{background:#555;color:white;text-align:center;vertical-align:middle;padding:4px 3px;border:1px solid #999;font-weight:bold;}}
+        #{table_id} td {{text-align:center;vertical-align:middle;padding:3px 3px;border:1px solid #ccc;line-height:1.2;}}
+        #{table_id} tr.alt {{background:#ddd;}} #{table_id} tr.normal {{background:#fff;}}
+        #{table_id} tr.especial td {{color:red;background:#fdd;}}
+        </style><table id="{table_id}"><thead><tr>"""
         for c in cols:
             html += f'<th style="width:{widths[c]}">{c}</th>'
         html += "</tr></thead><tbody>"
@@ -1432,17 +1435,18 @@ try:
             cls  = "especial" if eh_esp else ("alt" if alt else "normal")
             html += f'<tr class="{cls}">'
             for c in cols:
-                html += f"<td>{row.get(c,'') or ''}</td>"
+                val = row.get(c, "") or ""
+                html += f"<td>{val}</td>"
             html += "</tr>"
         html += "</tbody></table>"
         return html
 
     st.markdown("**4. PERÍODO**")
     st.markdown(f"**a. Semana (S) - {fmt_periodo_titulo(ini_s, fim_s)}**")
-    st.markdown(render_tabela_html(rows_s,  [r.get('_especial', False) for r in rows_s]),  unsafe_allow_html=True)
+    st.markdown(render_tabela_html(rows_s,  [r.get('_especial', False) for r in rows_s],  table_id="tabela_s"),  unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
     st.markdown(f"**b. Semana (S+1) - {fmt_periodo_titulo(ini_s1, fim_s1)}**")
-    st.markdown(render_tabela_html(rows_s1, [r.get('_especial', False) for r in rows_s1]), unsafe_allow_html=True)
+    st.markdown(render_tabela_html(rows_s1, [r.get('_especial', False) for r in rows_s1], table_id="tabela_s1"), unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
 
     with st.expander("5. FORMATURA GERAL", expanded=False):
