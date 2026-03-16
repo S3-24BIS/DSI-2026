@@ -487,8 +487,13 @@ def bullets_periodo(service, calendar_id: str, d_ini: datetime.date, d_fim: date
         local     = limpar_texto(ev.get("location",    "")).strip()
         militares = limpar_texto(ev.get("description", "")).strip()
 
-        # Monta bullet
-        texto = f"{periodo_fmt} - {s} | {smn_txt}"
+        # Monta bullet — evita duplicar Smn se o título já trouxer do Calendar
+        ja_tem_smn = bool(re.search(r'Smn\s+\d+/\d+', s, re.IGNORECASE))
+        if ja_tem_smn:
+            texto = f"{periodo_fmt} - {s}"
+        else:
+            texto = f"{periodo_fmt} - {s} | {smn_txt}"
+
         if local:
             texto += f" - {local}"
         if militares:
