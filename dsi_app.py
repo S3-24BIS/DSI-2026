@@ -27,6 +27,9 @@ IDS = {
     "s3":       "s3.24bis03@gmail.com",
     "cmt":      "comando24bis@gmail.com",
     "adj_cmdo": "gleysonsmelo141214@gmail.com",
+    "b_mus":    "bmus24bis@gmail.com",                # ✅ B Mus
+    "cia_2":    "jfsa2017@gmail.com",                 # ✅ 2ª Cia
+    "npor":     "npor.24bis.instrutor@gmail.com",     # ✅ NPOR
     "pgi":      "915a351ec7e277234d1da0e597fb14c7455f6f1a5a05eea8de837095a6e70c9e@group.calendar.google.com",
     "cursos":   "38d1be36abd6b1e2545500964d51074f66d24c36530a3ff677ef21b6b332f003@group.calendar.google.com",
     "datas":    "c9905256a40d19cc4d9954f633783c1ee96f6ad70165b5b7800b63e31ceeef1f@group.calendar.google.com",
@@ -212,7 +215,11 @@ def list_events(service, calendar_id: str, d_ini: datetime.date, d_fim: datetime
     return items
 
 def carregar_todos_eventos_paralelo(srv, d_ini, d_fim):
-    calendarios = ["s3", "cmt", "adj_cmdo", "pgi", "cursos", "datas", "si", "fase", "operacoes"]
+    calendarios = [
+        "s3", "cmt", "adj_cmdo",
+        "b_mus", "cia_2", "npor",
+        "pgi", "cursos", "datas", "si", "fase", "operacoes"
+    ]
     with ThreadPoolExecutor(max_workers=8) as executor:
         futures = {
             executor.submit(list_events, srv, IDS[cal], d_ini, d_fim): cal
@@ -522,20 +529,17 @@ def buscar_feriados(service, d_ini: datetime.date, d_fim: datetime.date):
 # =========================================================
 
 def buscar_atividades_futuras(service, fim_s1: datetime.date) -> list:
-    """
-    Busca eventos nos 45 dias após o fim de S+1 nas agendas:
-    PGI, S3, Cmt, Adj Cmdo, Datas Comemorativas e Operações.
-    Formato: "1) 08 Mai - Dia das Mães"
-    """
     d_ini_fut = fim_s1 + datetime.timedelta(days=1)
     d_fim_fut = fim_s1 + datetime.timedelta(days=45)
 
-    # Agendas que alimentam atividades futuras
     agendas_futuras = {
         "pgi":       IDS["pgi"],
         "s3":        IDS["s3"],
         "cmt":       IDS["cmt"],
         "adj_cmdo":  IDS["adj_cmdo"],
+        "b_mus":     IDS["b_mus"],      # ✅ B Mus
+        "cia_2":     IDS["cia_2"],      # ✅ 2ª Cia
+        "npor":      IDS["npor"],       # ✅ NPOR
         "datas":     IDS["datas"],
         "operacoes": IDS["operacoes"],
     }
@@ -544,7 +548,6 @@ def buscar_atividades_futuras(service, fim_s1: datetime.date) -> list:
 
     for nome_cal, cal_id in agendas_futuras.items():
         try:
-            # Para operações e cursos, busca mais ampla para pegar os em andamento
             if nome_cal == "operacoes":
                 evs = list_events(service, cal_id,
                                   d_ini_fut - datetime.timedelta(days=365),
@@ -558,7 +561,6 @@ def buscar_atividades_futuras(service, fim_s1: datetime.date) -> list:
         except Exception as e:
             st.warning(f"⚠️ Erro ao buscar atividades futuras ({nome_cal}): {e}")
 
-    # Agrupa por data de início e título para deduplicar
     eventos_unicos = {}
     for ev in todos_eventos:
         s_date, e_date, is_all_day, _ = parse_start_end(ev)
@@ -570,7 +572,6 @@ def buscar_atividades_futuras(service, fim_s1: datetime.date) -> list:
         else:
             e_date_inc = e_date if e_date else s_date
 
-        # Verifica se o evento está ativo no período futuro
         ativo_no_periodo = (s_date <= d_fim_fut) and (e_date_inc >= d_ini_fut)
         if not ativo_no_periodo:
             continue
@@ -579,10 +580,7 @@ def buscar_atividades_futuras(service, fim_s1: datetime.date) -> list:
         if not summary:
             continue
 
-        # Data de referência para ordenação e exibição
-        # Se o evento começa antes do período futuro (em andamento), usa d_ini_fut
         data_ref = max(s_date, d_ini_fut)
-
         chave = f"{summary}_{s_date}"
         if chave not in eventos_unicos:
             eventos_unicos[chave] = {
@@ -593,20 +591,16 @@ def buscar_atividades_futuras(service, fim_s1: datetime.date) -> list:
                 "cal_nome": ev.get("_cal_nome", ""),
             }
 
-    # Ordena por data de referência
     eventos_ordenados = sorted(eventos_unicos.values(), key=lambda x: x["data_ref"])
 
-    # Monta as linhas formatadas
     linhas = []
     for i, ev in enumerate(eventos_ordenados, 1):
         s_date  = ev["s_date"]
         e_date  = ev["e_date"]
         summary = ev["summary"]
 
-        # Formata a data
         dia_fmt = f"{s_date.day:02d} {formatar_mes_abreviado(s_date)}"
 
-        # Se tem período (mais de 1 dia), mostra o intervalo
         if e_date and e_date != s_date:
             ano_fim      = str(e_date.year)[-2:]
             data_fim_fmt = f"{e_date.day:02d} {formatar_mes_abreviado(e_date)} {ano_fim}"
@@ -623,8 +617,11 @@ def buscar_atividades_futuras(service, fim_s1: datetime.date) -> list:
 # =========================================================
 
 def construir_tabela_semana(service, d_ini, d_fim, incluir_cmt, incluir_pgi, feriados):
-    ev_s3  = list_events(service, IDS["s3"],  d_ini, d_fim)
-    ev_adj = list_events(service, IDS["adj_cmdo"], d_ini, d_fim)
+    ev_s3    = list_events(service, IDS["s3"],       d_ini, d_fim)
+    ev_adj   = list_events(service, IDS["adj_cmdo"], d_ini, d_fim)
+    ev_bmus  = list_events(service, IDS["b_mus"],    d_ini, d_fim)  # ✅ B Mus
+    ev_cia2  = list_events(service, IDS["cia_2"],    d_ini, d_fim)  # ✅ 2ª Cia
+    ev_npor  = list_events(service, IDS["npor"],     d_ini, d_fim)  # ✅ NPOR
 
     ev_cmd = []
     if incluir_cmt:
@@ -634,13 +631,16 @@ def construir_tabela_semana(service, d_ini, d_fim, incluir_cmt, incluir_pgi, fer
     if incluir_pgi:
         ev_pgi = list_events(service, IDS["pgi"], d_ini, d_fim)
 
-    evs = dedup_by_event_id(ev_s3 + ev_adj + ev_cmd + ev_pgi)
+    evs = dedup_by_event_id(
+        ev_s3 + ev_adj + ev_bmus + ev_cia2 + ev_npor + ev_cmd + ev_pgi
+    )
 
     rows = []
     cur  = d_ini
     while cur <= d_fim:
         evs_dia = [e for e in evs if event_intersects_day(e, cur)]
-        evs_dia.sort(key=lambda x: x.get("start", {}).get("dateTime", x.get("start", {}).get("date", "")))
+        evs_dia.sort(key=lambda x: x.get("start", {}).get("dateTime",
+                     x.get("start", {}).get("date", "")))
 
         eh_especial = eh_fim_de_semana(cur) or cur in feriados
 
@@ -661,12 +661,19 @@ def construir_tabela_semana(service, d_ini, d_fim, incluir_cmt, incluir_pgi, fer
                 local     = limpar_texto(e.get("location", ""))
 
                 src = e.get("_src_calendar_id", "")
+
                 if src == IDS["cmt"]:
                     resp = "Cmdo"
                 elif src == IDS["pgi"]:
                     resp = "PGI"
                 elif src == IDS["adj_cmdo"]:
                     resp = "Adj Cmdo"
+                elif src == IDS["b_mus"]:
+                    resp = "B Mus"
+                elif src == IDS["cia_2"]:
+                    resp = "2ª Cia"
+                elif src == IDS["npor"]:
+                    resp = "NPOR"
                 else:
                     resp = "S3"
 
@@ -692,8 +699,8 @@ def construir_tabela_semana(service, d_ini, d_fim, incluir_cmt, incluir_pgi, fer
 def exportar_excel(rows_s, rows_s1, num_fmt, si, fase, operacoes_linhas, ativ_futuras_linhas):
     try:
         output = io.BytesIO()
-        operacoes_texto      = "\n".join(operacoes_linhas)      if operacoes_linhas      else "-"
-        ativ_futuras_texto   = "\n".join(ativ_futuras_linhas)   if ativ_futuras_linhas   else "-"
+        operacoes_texto    = "\n".join(operacoes_linhas)    if operacoes_linhas    else "-"
+        ativ_futuras_texto = "\n".join(ativ_futuras_linhas) if ativ_futuras_linhas else "-"
 
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             df_s  = pd.DataFrame(rows_s).drop(columns=['_especial'], errors='ignore')
@@ -726,9 +733,9 @@ def salvar_historico(num_dsi: int, periodo: str, doc_id: str):
         if "historico" not in st.session_state:
             st.session_state.historico = []
         st.session_state.historico.append({
-            "numero":      num_dsi,
-            "periodo":     periodo,
-            "doc_id":      doc_id,
+            "numero":       num_dsi,
+            "periodo":      periodo,
+            "doc_id":       doc_id,
             "data_criacao": datetime.datetime.now().isoformat()
         })
         registrar_log("HISTORICO_SALVO", f"DSI {num_dsi}")
@@ -805,26 +812,25 @@ def criar_google_doc(creds, titulo_doc, num_fmt, ref_date, ini_s, fim_s, ini_s1,
     ).execute()
 
     # Tabela S
-    doc_atual   = docs_service.documents().get(documentId=doc_id).execute()
-    end_index   = doc_atual['body']['content'][-1]['endIndex']
+    doc_atual = docs_service.documents().get(documentId=doc_id).execute()
+    end_index = doc_atual['body']['content'][-1]['endIndex']
     inserir_e_preencher_tabela(docs_service, doc_id, rows_s, end_index - 1)
 
     # Tabela S+1
-    doc_atual   = docs_service.documents().get(documentId=doc_id).execute()
-    end_index   = doc_atual['body']['content'][-1]['endIndex']
-    texto_s1    = f"\n b. 2. Semana (S+1) - {fmt_periodo_titulo(ini_s1, fim_s1)}\n"
+    doc_atual = docs_service.documents().get(documentId=doc_id).execute()
+    end_index = doc_atual['body']['content'][-1]['endIndex']
+    texto_s1  = f"\n b. 2. Semana (S+1) - {fmt_periodo_titulo(ini_s1, fim_s1)}\n"
     docs_service.documents().batchUpdate(
         documentId=doc_id,
         body={'requests': [{'insertText': {'location': {'index': end_index - 1}, 'text': texto_s1}}]}
     ).execute()
 
-    doc_atual   = docs_service.documents().get(documentId=doc_id).execute()
-    end_index   = doc_atual['body']['content'][-1]['endIndex']
+    doc_atual = docs_service.documents().get(documentId=doc_id).execute()
+    end_index = doc_atual['body']['content'][-1]['endIndex']
     inserir_e_preencher_tabela(docs_service, doc_id, rows_s1, end_index - 1)
 
-    # Itens 5-8 + Atividades Futuras automáticas
-    doc_atual   = docs_service.documents().get(documentId=doc_id).execute()
-    end_index   = doc_atual['body']['content'][-1]['endIndex']
+    doc_atual = docs_service.documents().get(documentId=doc_id).execute()
+    end_index = doc_atual['body']['content'][-1]['endIndex']
 
     conteudo_final = []
 
@@ -837,7 +843,6 @@ def criar_google_doc(creds, titulo_doc, num_fmt, ref_date, ini_s, fim_s, ini_s1,
     conteudo_final.append(f" 6) Armado e Equipado: {fg.get('armado', '')}")
     conteudo_final.append("")
 
-    # Item 6: Atividades Futuras — preenchido automaticamente
     conteudo_final.append("6. ATIVIDADES FUTURAS")
     if ativ_futuras_linhas:
         for linha in ativ_futuras_linhas:
@@ -939,7 +944,7 @@ def inserir_e_preencher_tabela(docs_service, doc_id, rows, insert_index):
         row_data     = rows[row_idx]
         for col_idx in range(6, -1, -1):
             if col_idx < len(linha_tabela['tableCells']):
-                celula      = linha_tabela['tableCells'][col_idx]
+                celula       = linha_tabela['tableCells'][col_idx]
                 cell_content = celula.get('content')
                 if cell_content:
                     start_idx = cell_content[0].get('startIndex')
@@ -1048,7 +1053,7 @@ def aplicar_formatacao_tabela(docs_service, doc_id, rows, grupos_data):
             time.sleep(0.3)
 
     time.sleep(0.5)
-    doc     = docs_service.documents().get(documentId=doc_id).execute()
+    doc = docs_service.documents().get(documentId=doc_id).execute()
     tabela_element = None
     for element in reversed(doc['body']['content']):
         if 'table' in element:
@@ -1172,14 +1177,14 @@ try:
         num_fmt  = f"{int(num_doc):03d}"
         ref_date = st.date_input("Data de referência (para calcular S)", value=datetime.date.today())
 
-        incluir_cmt = st.checkbox("Incluir agenda do Cmt",      value=True)
-        incluir_pgi = st.checkbox("Incluir agenda PGI 2026",    value=True)
+        incluir_cmt = st.checkbox("Incluir agenda do Cmt",   value=True)
+        incluir_pgi = st.checkbox("Incluir agenda PGI 2026", value=True)
 
         col1, col2 = st.columns(2)
         with col1:
             if st.button("🔄 ATUALIZAR", type="primary", use_container_width=True):
                 st.cache_data.clear()
-                st.session_state.exportar  = False
+                st.session_state.exportar   = False
                 st.session_state.doc_criado = None
                 st.rerun()
         with col2:
@@ -1200,9 +1205,9 @@ try:
         st.markdown("---")
         st.info("💡 **Dica:** Use Ctrl+F para buscar no documento")
 
-    ini_s, fim_s   = week_range(ref_date)
-    ini_s1         = ini_s  + datetime.timedelta(days=7)
-    fim_s1         = fim_s  + datetime.timedelta(days=7)
+    ini_s, fim_s = week_range(ref_date)
+    ini_s1       = ini_s + datetime.timedelta(days=7)
+    fim_s1       = fim_s + datetime.timedelta(days=7)
 
     if not validar_datas(ini_s, fim_s1):
         st.stop()
@@ -1365,7 +1370,6 @@ try:
         st.text_input("5) GS:", key="fg_gs")
         st.text_input("6) Armado e Equipado:", key="fg_armado")
 
-    # Item 6 — Atividades Futuras automáticas (somente leitura no preview)
     with st.expander("6. ATIVIDADES FUTURAS", expanded=True):
         d_ini_fut = fim_s1 + datetime.timedelta(days=1)
         d_fim_fut = fim_s1 + datetime.timedelta(days=45)
