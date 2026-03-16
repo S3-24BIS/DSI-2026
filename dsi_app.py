@@ -537,9 +537,9 @@ def buscar_atividades_futuras(service, fim_s1: datetime.date) -> list:
         "s3":        IDS["s3"],
         "cmt":       IDS["cmt"],
         "adj_cmdo":  IDS["adj_cmdo"],
-        "b_mus":     IDS["b_mus"],      # ✅ B Mus
-        "cia_2":     IDS["cia_2"],      # ✅ 2ª Cia
-        "npor":      IDS["npor"],       # ✅ NPOR
+        "b_mus":     IDS["b_mus"],
+        "cia_2":     IDS["cia_2"],
+        "npor":      IDS["npor"],
         "datas":     IDS["datas"],
         "operacoes": IDS["operacoes"],
     }
@@ -561,7 +561,8 @@ def buscar_atividades_futuras(service, fim_s1: datetime.date) -> list:
         except Exception as e:
             st.warning(f"⚠️ Erro ao buscar atividades futuras ({nome_cal}): {e}")
 
-    eventos_unicos = {}
+    # ── Coleta todos os eventos válidos ───────────────────────────────────
+    eventos_validos = []
     for ev in todos_eventos:
         s_date, e_date, is_all_day, _ = parse_start_end(ev)
         if not s_date:
@@ -580,21 +581,39 @@ def buscar_atividades_futuras(service, fim_s1: datetime.date) -> list:
         if not summary:
             continue
 
-        data_ref = max(s_date, d_ini_fut)
-        chave = f"{summary}_{s_date}"
-        if chave not in eventos_unicos:
-            eventos_unicos[chave] = {
-                "summary":  summary,
-                "s_date":   s_date,
-                "e_date":   e_date_inc,
-                "data_ref": data_ref,
-                "cal_nome": ev.get("_cal_nome", ""),
-            }
+        eventos_validos.append({
+            "summary": summary,
+            "s_date":  s_date,
+            "e_date":  e_date_inc,
+        })
 
-    eventos_ordenados = sorted(eventos_unicos.values(), key=lambda x: x["data_ref"])
+    # ── Aglutina eventos com mesmo nome que sejam consecutivos ou sobrepostos
+    eventos_validos.sort(key=lambda x: (x["summary"], x["s_date"]))
 
+    aglutinados = []
+    for ev in eventos_validos:
+        if aglutinados and \
+           aglutinados[-1]["summary"] == ev["summary"] and \
+           ev["s_date"] <= aglutinados[-1]["e_date"] + datetime.timedelta(days=1):
+            # Estende o evento existente se as datas forem consecutivas ou sobrepostas
+            aglutinados[-1]["e_date"] = max(aglutinados[-1]["e_date"], ev["e_date"])
+        else:
+            aglutinados.append({"summary": ev["summary"], "s_date": ev["s_date"], "e_date": ev["e_date"]})
+
+    # ── Remove duplicatas exatas e ordena por data de início ─────────────
+    vistos = set()
+    unicos = []
+    for ev in aglutinados:
+        chave = f"{ev['summary']}_{ev['s_date']}_{ev['e_date']}"
+        if chave not in vistos:
+            vistos.add(chave)
+            unicos.append(ev)
+
+    unicos.sort(key=lambda x: x["s_date"])
+
+    # ── Monta as linhas formatadas ────────────────────────────────────────
     linhas = []
-    for i, ev in enumerate(eventos_ordenados, 1):
+    for i, ev in enumerate(unicos, 1):
         s_date  = ev["s_date"]
         e_date  = ev["e_date"]
         summary = ev["summary"]
