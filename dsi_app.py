@@ -718,7 +718,7 @@ def construir_tabela_semana(service, d_ini, d_fim, incluir_cmt, incluir_pgi, fer
             rows.append({
                 "DATA": fmt_data_coluna(cur),
                 "HORA": "", "ATIVIDADE": "", "LOCAL": "",
-                "UNIF": "", "RESP": "", "OBS": "",
+                "UNIF": "", "AGENDA": "", "OBS": "",
                 "_especial": eh_especial
             })
         else:
@@ -733,7 +733,7 @@ def construir_tabela_semana(service, d_ini, d_fim, incluir_cmt, incluir_pgi, fer
                 src = e.get("_src_calendar_id", "")
 
                 if src == IDS["cmt"]:
-                    resp = "Cmdo"
+                    resp = "Cmt"
                 elif src == IDS["pgi"]:
                     resp = "PGI"
                 elif src == IDS["adj_cmdo"]:
@@ -753,7 +753,7 @@ def construir_tabela_semana(service, d_ini, d_fim, incluir_cmt, incluir_pgi, fer
                     "ATIVIDADE": atividade,
                     "LOCAL":     local,
                     "UNIF":      "",
-                    "RESP":      resp,
+                    "AGENDA":      resp,
                     "OBS":       "",
                     "_especial": eh_especial if i == 0 else False
                 })
@@ -1003,7 +1003,7 @@ def inserir_e_preencher_tabela(docs_service, doc_id, rows, insert_index):
             grupos_data[data_atual].append(idx)
 
     all_requests = []
-    cols = ["DATA", "HORA", "ATIVIDADE", "LOCAL", "UNIF", "RESP", "OBS"]
+    cols = ["DATA", "HORA", "ATIVIDADE", "LOCAL", "UNIF", "AGENDA", "OBS"]
 
     for row_idx in range(len(rows) - 1, -1, -1):
         if row_idx + 1 >= len(tabela['tableRows']):
@@ -1023,7 +1023,7 @@ def inserir_e_preencher_tabela(docs_service, doc_id, rows, insert_index):
                             all_requests.append({'insertText': {'location': {'index': start_idx}, 'text': texto}})
 
     primeira_linha = tabela['tableRows'][0]
-    headers = ["DATA", "HORA", "ATIVIDADE", "LOCAL", "UNIF", "RESP", "OBS"]
+    headers = ["DATA", "HORA", "ATIVIDADE", "LOCAL", "UNIF", "AGENDA", "OBS"]
     for i in range(6, -1, -1):
         if i < len(primeira_linha['tableCells']):
             cell_content = primeira_linha['tableCells'][i].get('content')
@@ -1396,8 +1396,8 @@ try:
             st.markdown(f" {item}")
 
     def render_tabela_html(rows, especial_list, table_id="dsi"):
-        cols   = ["DATA", "HORA", "ATIVIDADE", "LOCAL", "UNIF", "RESP", "OBS"]
-        widths = {"DATA":"11%","HORA":"5%","ATIVIDADE":"32%","LOCAL":"22%","UNIF":"6%","RESP":"6%","OBS":"8%"}
+        cols   = ["DATA", "HORA", "ATIVIDADE", "LOCAL", "UNIF", "AGENDA", "OBS"]
+        widths = {"DATA":"11%","HORA":"5%","ATIVIDADE":"32%","LOCAL":"22%","UNIF":"6%","AGENDA":"6%","OBS":"8%"}
         html   = f"""
         <style>
         #{table_id} {{width:100%;border-collapse:collapse;font-size:12px;font-family:Calibri,Arial,sans-serif;}}
