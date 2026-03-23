@@ -1211,29 +1211,49 @@ def formatar_documento_completo(docs_service, doc_id, rows_s, rows_s1):
         'fields': 'marginTop,marginBottom,marginLeft,marginRight'
     }})
 
-    # Negrito nos títulos das seções
-    texto_completo = ""
-    for element in content:
-        if 'paragraph' in element:
-            for elem in element['paragraph'].get('elements', []):
-                if 'textRun' in elem:
-                    texto_completo += elem['textRun'].get('content', '')
+    if requests:
+        batch_update_com_retry(docs_service, doc_id, requests)
+        requests = []
 
+    # Negrito nos títulos das seções — usa índices reais dos elementos do documento
+    # (nunca recalcula posição via len() de string concatenada, pois os índices do
+    # Google Docs são estruturais e não correspondem a offsets de caracteres lineares)
     padroes_negrito = [
-        r"1\.\s+OPERAÇÕES:", r"2\.\s+CURSOS E ESTÁGIOS",
-        r"3\.\s+DATAS COMEMORATIVAS E FERIADOS", r"4\.\s+PERÍODO",
-        r"5\.\s+FORMATURA GERAL", r"6\.\s+ATIVIDADES FUTURAS",
-        r"7\.\s+SU", r"8\.\s+ATIVIDADES PLANEJADAS E NÃO EXECUTADAS"
+        r"1\.\s+OPERA[ÇC][ÕO]ES[:\s]?",
+        r"2\.\s+CURSOS E EST[ÁA]GIOS",
+        r"3\.\s+DATAS COMEMORATIVAS",
+        r"4\.\s+PER[ÍI]ODO",
+        r"5\.\s+FORMATURA GERAL",
+        r"6\.\s+ATIVIDADES FUTURAS",
+        r"7\.\s+SU\b",
+        r"8\.\s+ATIVIDADES PLANEJADAS",
     ]
-    for padrao in padroes_negrito:
-        match = re.search(padrao, texto_completo)
-        if match:
-            start_pos = len(texto_completo[:match.start()]) + 1
-            end_pos   = start_pos + len(match.group())
-            requests.append({'updateTextStyle': {
-                'range': {'startIndex': start_pos, 'endIndex': end_pos},
-                'textStyle': {'bold': True}, 'fields': 'bold'
-            }})
+
+    for element in content:
+        if 'paragraph' not in element:
+            continue
+        para = element['paragraph']
+        para_elements = para.get('elements', [])
+        for pe in para_elements:
+            if 'textRun' not in pe:
+                continue
+            texto_run = pe['textRun'].get('content', '').strip()
+            run_start = pe.get('startIndex')
+            run_end   = pe.get('endIndex')
+            if run_start is None or run_end is None or run_end <= run_start:
+                continue
+            # Verifica se este textRun bate com algum padrão de título
+            for padrao in padroes_negrito:
+                if re.search(padrao, texto_run, re.IGNORECASE):
+                    # Garante que o range não ultrapasse o fim do documento
+                    safe_end = min(run_end, end_index - 1)
+                    if safe_end > run_start:
+                        requests.append({'updateTextStyle': {
+                            'range': {'startIndex': run_start, 'endIndex': safe_end},
+                            'textStyle': {'bold': True},
+                            'fields': 'bold'
+                        }})
+                    break  # não precisa checar os outros padrões para este run
 
     if requests:
         batch_update_com_retry(docs_service, doc_id, requests)
