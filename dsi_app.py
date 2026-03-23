@@ -3,6 +3,7 @@ import re
 import io
 import json
 import time
+import random
 from concurrent.futures import ThreadPoolExecutor
 
 import streamlit as st
@@ -12,6 +13,7 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 
 # =========================================================
 # CONFIGURAÇÕES
@@ -39,6 +41,41 @@ IDS = {
 }
 
 MEU_EMAIL = IDS["s3"]
+
+# =========================================================
+# RETRY COM BACKOFF EXPONENCIAL — resolve HTTP 429
+# =========================================================
+
+def batch_update_com_retry(docs_service, doc_id, requests_list, max_tentativas=6, tamanho_lote=50):
+    """
+    Executa batchUpdate em lotes com retry exponencial em caso de 429.
+    - tamanho_lote: máximo de requests por chamada (limite seguro: 50)
+    - max_tentativas: quantas vezes tenta antes de relançar a exceção
+    - Backoff: 2^tentativa + jitter aleatório (0–1s)
+    """
+    if not requests_list:
+        return
+
+    DELAY_ENTRE_LOTES = 1.2  # segundos entre lotes com sucesso
+
+    for i in range(0, len(requests_list), tamanho_lote):
+        lote = requests_list[i:i + tamanho_lote]
+        for tentativa in range(max_tentativas):
+            try:
+                docs_service.documents().batchUpdate(
+                    documentId=doc_id, body={"requests": lote}
+                ).execute()
+                time.sleep(DELAY_ENTRE_LOTES)
+                break  # sucesso → próximo lote
+            except HttpError as e:
+                if e.resp.status == 429:
+                    espera = (2 ** tentativa) + random.uniform(0, 1)
+                    print(f"[429] Rate limit — aguardando {espera:.1f}s (tentativa {tentativa + 1}/{max_tentativas})")
+                    time.sleep(espera)
+                    if tentativa == max_tentativas - 1:
+                        raise  # esgotou tentativas
+                else:
+                    raise  # outro erro HTTP → propaga imediatamente
 
 # =========================================================
 # FUNÇÕES DE TRATAMENTO
@@ -284,8 +321,6 @@ def event_intersects_day(ev, day: datetime.date) -> bool:
     if is_all_day:
         return (s_date <= day) and (day < e_date)
 
-    # Evento com hora: se termina à meia-noite (00:00) do dia seguinte,
-    # trata como terminando no mesmo dia de início (evita duplicar no dia seguinte)
     start = ev.get("start", {})
     end   = ev.get("end",   {})
     edt   = end.get("dateTime", "")
@@ -655,7 +690,6 @@ def buscar_atividades_futuras(service, fim_s1: datetime.date) -> list:
 # =========================================================
 
 def construir_tabela_semana(service, d_ini, d_fim, incluir_cmt, incluir_pgi, feriados):
-    # Busca sequencial — segura no Streamlit Cloud
     ev_s3   = list_events(service, IDS["s3"],       d_ini, d_fim)
     ev_adj  = list_events(service, IDS["adj_cmdo"], d_ini, d_fim)
     ev_bmus = list_events(service, IDS["b_mus"],    d_ini, d_fim)
@@ -672,7 +706,6 @@ def construir_tabela_semana(service, d_ini, d_fim, incluir_cmt, incluir_pgi, fer
 
     todos = ev_s3 + ev_adj + ev_bmus + ev_cia2 + ev_npor + ev_cmd + ev_pgi
 
-    # Prioridade de RESP: agendas específicas ganham sobre S3
     PRIORIDADE_RESP = {
         IDS["npor"]:     1,
         IDS["b_mus"]:    2,
@@ -685,12 +718,10 @@ def construir_tabela_semana(service, d_ini, d_fim, incluir_cmt, incluir_pgi, fer
 
     evs = dedup_by_event_id(todos)
 
-    # Dedup por título+data+hora: mantém a agenda de maior prioridade
     mapa_titulo = {}
     for e in evs:
         s_date, e_date, is_all_day, hora = parse_start_end(e)
         titulo = limpar_texto(e.get("summary", "")).strip()
-        # Para eventos de dia inteiro, normaliza hora para "D"
         hora_norm = "D" if is_all_day else hora
         chave_titulo = f"{titulo}_{s_date}_{hora_norm}"
         src = e.get("_src_calendar_id", "")
@@ -753,7 +784,7 @@ def construir_tabela_semana(service, d_ini, d_fim, incluir_cmt, incluir_pgi, fer
                     "ATIVIDADE": atividade,
                     "LOCAL":     local,
                     "UNIF":      "",
-                    "AGENDA":      resp,
+                    "AGENDA":    resp,
                     "OBS":       "",
                     "_especial": eh_especial if i == 0 else False
                 })
@@ -876,27 +907,30 @@ def criar_google_doc(creds, titulo_doc, num_fmt, ref_date, ini_s, fim_s, ini_s1,
 
     texto_completo = "\n".join(conteudo)
 
-    docs_service.documents().batchUpdate(
-        documentId=doc_id,
-        body={'requests': [{'insertText': {'location': {'index': 1}, 'text': texto_completo}}]}
-    ).execute()
+    # --- Inserção do texto inicial (1 chamada) ---
+    batch_update_com_retry(docs_service, doc_id, [
+        {'insertText': {'location': {'index': 1}, 'text': texto_completo}}
+    ])
 
+    # --- Tabela Semana S ---
     doc_atual = docs_service.documents().get(documentId=doc_id).execute()
     end_index = doc_atual['body']['content'][-1]['endIndex']
     inserir_e_preencher_tabela(docs_service, doc_id, rows_s, end_index - 1)
 
+    # --- Cabeçalho Semana S+1 ---
     doc_atual = docs_service.documents().get(documentId=doc_id).execute()
     end_index = doc_atual['body']['content'][-1]['endIndex']
     texto_s1  = f"\n b. 2. Semana (S+1) - {fmt_periodo_titulo(ini_s1, fim_s1)}\n"
-    docs_service.documents().batchUpdate(
-        documentId=doc_id,
-        body={'requests': [{'insertText': {'location': {'index': end_index - 1}, 'text': texto_s1}}]}
-    ).execute()
+    batch_update_com_retry(docs_service, doc_id, [
+        {'insertText': {'location': {'index': end_index - 1}, 'text': texto_s1}}
+    ])
 
+    # --- Tabela Semana S+1 ---
     doc_atual = docs_service.documents().get(documentId=doc_id).execute()
     end_index = doc_atual['body']['content'][-1]['endIndex']
     inserir_e_preencher_tabela(docs_service, doc_id, rows_s1, end_index - 1)
 
+    # --- Conteúdo final (seções 5–8 + assinatura) ---
     doc_atual = docs_service.documents().get(documentId=doc_id).execute()
     end_index = doc_atual['body']['content'][-1]['endIndex']
 
@@ -940,11 +974,12 @@ def criar_google_doc(creds, titulo_doc, num_fmt, ref_date, ini_s, fim_s, ini_s1,
     data_assinatura = f"São Luís, MA, {hoje.day} de {meses_completos[hoje.month-1]} de {hoje.year}"
     conteudo_final.append(f"{data_assinatura}\n\n\n\nJOÃO CARLOS DUQUE – Ten Cel\nComandante do 24º Batalhão de Infantaria de Selva\n")
 
-    docs_service.documents().batchUpdate(
-        documentId=doc_id,
-        body={'requests': [{'insertText': {'location': {'index': end_index - 1}, 'text': "\n".join(conteudo_final)}}]}
-    ).execute()
+    batch_update_com_retry(docs_service, doc_id, [
+        {'insertText': {'location': {'index': end_index - 1}, 'text': "\n".join(conteudo_final)}}
+    ])
 
+    # --- Formatação global (pausa maior antes para o Docs processar) ---
+    time.sleep(3)
     formatar_documento_completo(docs_service, doc_id, rows_s, rows_s1)
     return doc_id
 
@@ -953,11 +988,11 @@ def criar_google_doc(creds, titulo_doc, num_fmt, ref_date, ini_s, fim_s, ini_s1,
 # =========================================================
 
 def inserir_e_preencher_tabela(docs_service, doc_id, rows, insert_index):
-    docs_service.documents().batchUpdate(
-        documentId=doc_id,
-        body={'requests': [{'insertTable': {'rows': len(rows) + 1, 'columns': 7, 'location': {'index': insert_index}}}]}
-    ).execute()
-    time.sleep(0.8)
+    # Insere a tabela e aguarda o Docs processá-la
+    batch_update_com_retry(docs_service, doc_id, [
+        {'insertTable': {'rows': len(rows) + 1, 'columns': 7, 'location': {'index': insert_index}}}
+    ])
+    time.sleep(2)  # pausa maior: garante que a tabela esteja disponível antes do próximo get
 
     def get_ultima_tabela():
         doc     = docs_service.documents().get(documentId=doc_id).execute()
@@ -973,6 +1008,7 @@ def inserir_e_preencher_tabela(docs_service, doc_id, rows, insert_index):
 
     larguras_pt = [95, 38, 170, 125, 28, 28, 28]
 
+    # Ajusta largura das colunas
     doc_temp = docs_service.documents().get(documentId=doc_id).execute()
     for el in reversed(doc_temp['body']['content']):
         if 'table' in el:
@@ -986,8 +1022,7 @@ def inserir_e_preencher_tabela(docs_service, doc_id, rows, insert_index):
                 }} for ci, larg in enumerate(larguras_pt)
             ]
             try:
-                docs_service.documents().batchUpdate(documentId=doc_id, body={'requests': col_reqs}).execute()
-                time.sleep(0.3)
+                batch_update_com_retry(docs_service, doc_id, col_reqs)
             except Exception as e:
                 print(f"Erro larguras: {e}")
             break
@@ -1034,9 +1069,7 @@ def inserir_e_preencher_tabela(docs_service, doc_id, rows, insert_index):
 
     if all_requests:
         try:
-            for i in range(0, len(all_requests), 100):
-                docs_service.documents().batchUpdate(documentId=doc_id, body={'requests': all_requests[i:i+100]}).execute()
-                time.sleep(0.2)
+            batch_update_com_retry(docs_service, doc_id, all_requests)
         except Exception as e:
             print(f"Erro preencher tabela: {e}")
 
@@ -1060,6 +1093,7 @@ def aplicar_formatacao_tabela(docs_service, doc_id, rows, grupos_data):
     table_start = tabela_element['startIndex']
     requests    = []
 
+    # Bordas em todas as células
     for row_idx in range(len(tabela.get('tableRows', []))):
         for col_idx in range(7):
             borda = {'color': {'color': {'rgbColor': {'red': 0, 'green': 0, 'blue': 0}}}, 'width': {'magnitude': 1, 'unit': 'PT'}, 'dashStyle': 'SOLID'}
@@ -1069,6 +1103,7 @@ def aplicar_formatacao_tabela(docs_service, doc_id, rows, grupos_data):
                 'fields': 'borderTop,borderBottom,borderLeft,borderRight'
             }})
 
+    # Fundo cinza no cabeçalho
     for col_idx in range(7):
         requests.append({'updateTableCellStyle': {
             'tableRange': {'tableCellLocation': {'tableStartLocation': {'index': table_start}, 'rowIndex': 0, 'columnIndex': col_idx}, 'rowSpan': 1, 'columnSpan': 1},
@@ -1076,12 +1111,14 @@ def aplicar_formatacao_tabela(docs_service, doc_id, rows, grupos_data):
             'fields': 'backgroundColor'
         }})
 
+    # Mescla células da coluna DATA
     for data, indices in grupos_data.items():
         if len(indices) > 1:
             requests.append({'mergeTableCells': {
                 'tableRange': {'tableCellLocation': {'tableStartLocation': {'index': table_start}, 'rowIndex': indices[0] + 1, 'columnIndex': 0}, 'rowSpan': len(indices), 'columnSpan': 1}
             }})
 
+    # Cores alternadas (vermelho para especiais)
     cor_alternada = True
     for data, indices in grupos_data.items():
         eh_dia_especial = any(rows[idx].get('_especial', False) for idx in indices)
@@ -1099,6 +1136,7 @@ def aplicar_formatacao_tabela(docs_service, doc_id, rows, grupos_data):
         if not eh_dia_especial:
             cor_alternada = not cor_alternada
 
+    # Alinhamento central e padding
     for row_idx in range(len(rows) + 1):
         if row_idx < len(tabela.get('tableRows', [])):
             row_cells = tabela['tableRows'][row_idx].get('tableCells', [])
@@ -1116,10 +1154,9 @@ def aplicar_formatacao_tabela(docs_service, doc_id, rows, grupos_data):
                     }})
 
     if requests:
-        for i in range(0, len(requests), 50):
-            docs_service.documents().batchUpdate(documentId=doc_id, body={'requests': requests[i:i+50]}).execute()
-            time.sleep(0.3)
+        batch_update_com_retry(docs_service, doc_id, requests)
 
+    # Negrito e cor branca no cabeçalho (leitura atualizada do doc)
     time.sleep(0.5)
     doc = docs_service.documents().get(documentId=doc_id).execute()
     tabela_element = None
@@ -1145,23 +1182,25 @@ def aplicar_formatacao_tabela(docs_service, doc_id, rows, grupos_data):
                         }})
         if reqs_negrito:
             try:
-                docs_service.documents().batchUpdate(documentId=doc_id, body={'requests': reqs_negrito}).execute()
+                batch_update_com_retry(docs_service, doc_id, reqs_negrito)
             except Exception as e:
                 print(f"Erro negrito: {e}")
 
 
 def formatar_documento_completo(docs_service, doc_id, rows_s, rows_s1):
-    time.sleep(1)
     doc       = docs_service.documents().get(documentId=doc_id).execute()
     content   = doc['body']['content']
     end_index = content[-1]['endIndex']
     requests  = []
 
+    # Fonte e tamanho globais
     requests.append({'updateTextStyle': {
         'range': {'startIndex': 1, 'endIndex': end_index - 1},
         'textStyle': {'fontSize': {'magnitude': 12, 'unit': 'PT'}, 'weightedFontFamily': {'fontFamily': 'Calibri'}},
         'fields': 'fontSize,weightedFontFamily'
     }})
+
+    # Margens do documento
     requests.append({'updateDocumentStyle': {
         'documentStyle': {
             'marginTop':    {'magnitude': 28.35, 'unit': 'PT'},
@@ -1172,6 +1211,7 @@ def formatar_documento_completo(docs_service, doc_id, rows_s, rows_s1):
         'fields': 'marginTop,marginBottom,marginLeft,marginRight'
     }})
 
+    # Negrito nos títulos das seções
     texto_completo = ""
     for element in content:
         if 'paragraph' in element:
@@ -1196,9 +1236,7 @@ def formatar_documento_completo(docs_service, doc_id, rows_s, rows_s1):
             }})
 
     if requests:
-        for i in range(0, len(requests), 50):
-            docs_service.documents().batchUpdate(documentId=doc_id, body={'requests': requests[i:i+50]}).execute()
-            time.sleep(0.3)
+        batch_update_com_retry(docs_service, doc_id, requests)
 
 
 def criar_google_doc_safe(creds, *args, **kwargs):
@@ -1207,8 +1245,8 @@ def criar_google_doc_safe(creds, *args, **kwargs):
             return criar_google_doc(creds, *args, **kwargs)
         except Exception as e:
             if tentativa < 2:
-                st.warning(f"⚠️ Tentativa {tentativa + 1} falhou. Tentando novamente...")
-                time.sleep(2)
+                st.warning(f"⚠️ Tentativa {tentativa + 1} falhou. Tentando novamente em 5s...")
+                time.sleep(5)
             else:
                 st.error(f"❌ Erro após 3 tentativas: {e}")
                 raise
@@ -1312,7 +1350,7 @@ try:
         fg = {k: st.session_state.get(f"fg_{k}", "")
               for k in ["finalidade", "dia", "dobrado", "cancao", "gs", "armado"]}
 
-        with st.spinner("📝 Criando documento no Google Docs..."):
+        with st.spinner("📝 Criando documento no Google Docs... (pode levar 1-2 minutos)"):
             try:
                 doc_id = criar_google_doc_safe(
                     creds, titulo_dsi, num_fmt, ref_date,
