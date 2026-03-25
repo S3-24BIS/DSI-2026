@@ -38,6 +38,10 @@ IDS = {
     "si":       "d140cd6bbf50cb6e5754222732d27f20e9ee833aca680475c0f1f34e0df74fa0@group.calendar.google.com",
     "fase":     "ac05541df4fd8c2dff7eeebe910442a84fd43a9ade0a8699b1d96cf6e2986d1e@group.calendar.google.com",
     "operacoes":"a253be647f9dd8c1b044f0e89643a569d95cbd9054f4eb8401c373a4cb2dd667@group.calendar.google.com",
+    "1 Cia":    "gurupi1cia@gmail.com",
+    "1 Cia Sgte":"sargenteacaogurupi@gmail.com",
+    "2 Cia Sgte":"sgtetimbira@gmail.com",
+    "4 Sç":     "4secao24bis@gmail.com",
 }
 
 MEU_EMAIL = IDS["s3"]
