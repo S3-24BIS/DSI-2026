@@ -62,7 +62,7 @@ IDS = {
     "operacoes": "a253be647f9dd8c1b044f0e89643a569d95cbd9054f4eb8401c373a4cb2dd667@group.calendar.google.com",
 }
 
-# Mapa email → rótulo da coluna AG (usado em construir_tabela_semana)
+# Mapa email → rótulo da coluna AG
 RESP_MAP = {
     IDS["cmt"]:      "Cmt",
     IDS["cmdo"]:     "Cmdo",
@@ -533,9 +533,9 @@ def buscar_operacoes(service, d_ini_s, d_fim_s1):
     linhas_formatadas = []
     for i, op in enumerate(operacoes_ordenadas, 1):
         if op['tipo']:
-            linha = f" {i}) {op['nome']} ({op['tipo']}) - __ Militares - _____________"
+            linha = f" {i}) {op['nome']} ({op['tipo']}) - __ Militares"
         else:
-            linha = f" {i}) {op['nome']} - __ Militares - _____________"
+            linha = f" {i}) {op['nome']} - __ Militares"
         linhas_formatadas.append(linha)
 
     return linhas_formatadas
@@ -602,8 +602,6 @@ def bullets_periodo(service, calendar_id: str, d_ini: datetime.date, d_fim: date
             lista_mil = [m.strip() for m in re.split(r'[,;\n]', militares) if m.strip()]
             if lista_mil:
                 texto += " - " + ", ".join(lista_mil)
-        if incluir_responsavel:
-            texto += " - _____________"
 
         linhas.append((s_date, texto))
 
@@ -741,7 +739,6 @@ def buscar_atividades_futuras(service, fim_s1: datetime.date) -> list:
 # há duplicata pelo mesmo event_id em múltiplas agendas.
 # =========================================================
 
-# Prioridade por calendar_id — menor = mais prioritário
 PRIORIDADE_RESP = {
     IDS["npor"]:     1,
     IDS["npor_ste"]: 2,
@@ -770,7 +767,7 @@ PRIORIDADE_RESP = {
     IDS["s3"]:       99,
 }
 
-# Lista de todas as agendas carregadas na tabela
+# ── Lista completa de agendas usadas nas tabelas ──────────
 AGENDAS_TABELA = [
     "s3", "cmt", "cmdo", "sub_cmt", "adj_cmdo",
     "sec_1", "sec_4",
@@ -794,7 +791,7 @@ def construir_tabela_semana(service, d_ini, d_fim, incluir_cmt, incluir_pgi, fer
         evs_pgi = list_events(service, IDS["pgi"], d_ini, d_fim)
         todos.extend(evs_pgi)
 
-    # Desduplicação com prioridade
+    # Desduplicação com prioridade por título+data+hora
     mapa_titulo = {}
     for e in todos:
         s_date, e_date, is_all_day, hora = parse_start_end(e)
@@ -975,17 +972,16 @@ def criar_google_doc(creds, titulo_doc, num_fmt, ref_date,
 
     texto_completo = "\n".join(conteudo)
 
-    # --- Inserção do texto inicial ---
     batch_update_com_retry(docs_service, doc_id, [
         {'insertText': {'location': {'index': 1}, 'text': texto_completo}}
     ])
 
-    # --- Tabela Semana S-1 ---
+    # Tabela S-1
     doc_atual = docs_service.documents().get(documentId=doc_id).execute()
     end_index = doc_atual['body']['content'][-1]['endIndex']
     inserir_e_preencher_tabela(docs_service, doc_id, rows_sm1, end_index - 1)
 
-    # --- Cabeçalho Semana S ---
+    # Cabeçalho Semana S
     doc_atual = docs_service.documents().get(documentId=doc_id).execute()
     end_index = doc_atual['body']['content'][-1]['endIndex']
     texto_s   = f"\n b. Semana (S) - {fmt_periodo_titulo(ini_s, fim_s)}\n"
@@ -993,12 +989,12 @@ def criar_google_doc(creds, titulo_doc, num_fmt, ref_date,
         {'insertText': {'location': {'index': end_index - 1}, 'text': texto_s}}
     ])
 
-    # --- Tabela Semana S ---
+    # Tabela S
     doc_atual = docs_service.documents().get(documentId=doc_id).execute()
     end_index = doc_atual['body']['content'][-1]['endIndex']
     inserir_e_preencher_tabela(docs_service, doc_id, rows_s, end_index - 1)
 
-    # --- Cabeçalho Semana S+1 ---
+    # Cabeçalho Semana S+1
     doc_atual = docs_service.documents().get(documentId=doc_id).execute()
     end_index = doc_atual['body']['content'][-1]['endIndex']
     texto_s1  = f"\n c. Semana (S+1) - {fmt_periodo_titulo(ini_s1, fim_s1)}\n"
@@ -1006,12 +1002,12 @@ def criar_google_doc(creds, titulo_doc, num_fmt, ref_date,
         {'insertText': {'location': {'index': end_index - 1}, 'text': texto_s1}}
     ])
 
-    # --- Tabela Semana S+1 ---
+    # Tabela S+1
     doc_atual = docs_service.documents().get(documentId=doc_id).execute()
     end_index = doc_atual['body']['content'][-1]['endIndex']
     inserir_e_preencher_tabela(docs_service, doc_id, rows_s1, end_index - 1)
 
-    # --- Conteúdo final (seções 5–8 + assinatura) ---
+    # Conteúdo final
     doc_atual = docs_service.documents().get(documentId=doc_id).execute()
     end_index = doc_atual['body']['content'][-1]['endIndex']
 
@@ -1059,7 +1055,6 @@ def criar_google_doc(creds, titulo_doc, num_fmt, ref_date,
         {'insertText': {'location': {'index': end_index - 1}, 'text': "\n".join(conteudo_final)}}
     ])
 
-    # --- Formatação global ---
     time.sleep(3)
     formatar_documento_completo(docs_service, doc_id, rows_sm1, rows_s, rows_s1)
     return doc_id
@@ -1428,7 +1423,7 @@ try:
         for linha in ativ_futuras_linhas:
             st.write(f"  {linha}")
 
-    bullets_cursos = bullets_periodo(srv, IDS["cursos"], ini_s, fim_s1, incluir_responsavel=True)
+    bullets_cursos = bullets_periodo(srv, IDS["cursos"], ini_s, fim_s1, incluir_responsavel=False)
     bullets_datas  = bullets_periodo(srv, IDS["datas"],  ini_s, fim_s1)
     feriados       = buscar_feriados(srv, ini_sm1, fim_s1)
 
@@ -1509,10 +1504,12 @@ try:
     st.markdown(f"<h3 style='text-align:center; font-family:Calibri;'>{titulo_dsi}</h3>", unsafe_allow_html=True)
     st.markdown(f"<p style='text-align:center; font-family:Calibri;'><strong>{linha_qts}</strong></p>", unsafe_allow_html=True)
 
+    # ── Seção 1: Operações (sem traço no final) ──────────────
     st.markdown("**1. OPERAÇÕES:**")
     for linha in (operacoes_linhas or ["-"]):
         st.markdown(linha)
 
+    # ── Seção 2 e 3 ─────────────────────────────────────────
     col1, col2 = st.columns(2)
     with col1:
         st.markdown("**2. CURSOS E ESTÁGIOS**")
@@ -1551,18 +1548,40 @@ try:
         html += "</tbody></table>"
         return html
 
+    # ── Seção 4: Instrução com as 3 semanas ─────────────────
     st.markdown("**4. INSTRUÇÃO**")
 
+    # S-1 — CORRIGIDO: agora renderiza a tabela corretamente
     st.markdown(f"**a. Semana (S-1) - {fmt_periodo_titulo(ini_sm1, fim_sm1)}** *(referência — confirme o que foi executado na seção 8)*")
-    st.markdown(render_tabela_html(rows_sm1, [r.get('_especial', False) for r in rows_sm1], table_id="tabela_sm1"), unsafe_allow_html=True)
+    if rows_sm1:
+        st.markdown(
+            render_tabela_html(rows_sm1, [r.get('_especial', False) for r in rows_sm1], table_id="tabela_sm1"),
+            unsafe_allow_html=True
+        )
+    else:
+        st.info("Nenhum evento encontrado para S-1.")
     st.markdown("<br>", unsafe_allow_html=True)
 
+    # S
     st.markdown(f"**b. Semana (S) - {fmt_periodo_titulo(ini_s, fim_s)}**")
-    st.markdown(render_tabela_html(rows_s,  [r.get('_especial', False) for r in rows_s],  table_id="tabela_s"),  unsafe_allow_html=True)
+    if rows_s:
+        st.markdown(
+            render_tabela_html(rows_s, [r.get('_especial', False) for r in rows_s], table_id="tabela_s"),
+            unsafe_allow_html=True
+        )
+    else:
+        st.info("Nenhum evento encontrado para S.")
     st.markdown("<br>", unsafe_allow_html=True)
 
+    # S+1
     st.markdown(f"**c. Semana (S+1) - {fmt_periodo_titulo(ini_s1, fim_s1)}**")
-    st.markdown(render_tabela_html(rows_s1, [r.get('_especial', False) for r in rows_s1], table_id="tabela_s1"), unsafe_allow_html=True)
+    if rows_s1:
+        st.markdown(
+            render_tabela_html(rows_s1, [r.get('_especial', False) for r in rows_s1], table_id="tabela_s1"),
+            unsafe_allow_html=True
+        )
+    else:
+        st.info("Nenhum evento encontrado para S+1.")
     st.markdown("<br>", unsafe_allow_html=True)
 
     with st.expander("5. FORMATURA GERAL", expanded=False):
