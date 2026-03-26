@@ -531,11 +531,11 @@ def buscar_operacoes(service, d_ini_s, d_fim_s1):
     operacoes_ordenadas = sorted(operacoes_unicas.values(), key=lambda x: x['data_inicio'])
 
     linhas_formatadas = []
-    for i, op in enumerate(operacoes_ordenadas, 1):
+    for op in operacoes_ordenadas:
         if op['tipo']:
-            linha = f" {i}) {op['nome']} ({op['tipo']}) - __ Militares"
+            linha = f" {op['nome']} ({op['tipo']}) - __ Militares"
         else:
-            linha = f" {i}) {op['nome']} - __ Militares"
+            linha = f" {op['nome']} - __ Militares"
         linhas_formatadas.append(linha)
 
     return linhas_formatadas
@@ -643,10 +643,28 @@ def buscar_atividades_futuras(service, fim_s1: datetime.date) -> list:
         "pgi":       IDS["pgi"],
         "s3":        IDS["s3"],
         "cmt":       IDS["cmt"],
+        "cmdo":      IDS["cmdo"],
+        "sub_cmt":   IDS["sub_cmt"],
         "adj_cmdo":  IDS["adj_cmdo"],
-        "b_mus":     IDS["b_mus"],
+        "sec_1":     IDS["sec_1"],
+        "sec_4":     IDS["sec_4"],
+        "cia_1":     IDS["cia_1"],
+        "cia_1b":    IDS["cia_1b"],
+        "cia_1_sgt": IDS["cia_1_sgt"],
         "cia_2":     IDS["cia_2"],
+        "cia_2b":    IDS["cia_2b"],
+        "cia_2_sgt": IDS["cia_2_sgt"],
+        "b_mus":     IDS["b_mus"],
         "npor":      IDS["npor"],
+        "npor_ste":  IDS["npor_ste"],
+        "ass_jur":   IDS["ass_jur"],
+        "brigada":   IDS["brigada"],
+        "fisc_adm":  IDS["fisc_adm"],
+        "chales":    IDS["chales"],
+        "com_soc":   IDS["com_soc"],
+        "fiscal":    IDS["fiscal"],
+        "prm":       IDS["prm"],
+        "sfpc":      IDS["sfpc"],
         "datas":     IDS["datas"],
         "operacoes": IDS["operacoes"],
     }
@@ -729,7 +747,7 @@ def buscar_atividades_futuras(service, fim_s1: datetime.date) -> list:
         else:
             data_exib = dia_fmt
 
-        linhas.append(f" {i}) {data_exib} - {summary}")
+        linhas.append(f" {data_exib} - {summary}")
 
     return linhas
 
@@ -951,8 +969,8 @@ def criar_google_doc(creds, titulo_doc, num_fmt, ref_date,
 
     conteudo.append("2. CURSOS E ESTÁGIOS")
     if bullets_cursos:
-        for i, b in enumerate(bullets_cursos, 1):
-            conteudo.append(f" {i}) {b}")
+        for b in bullets_cursos:
+            conteudo.append(f" {b}")
     else:
         conteudo.append("-")
     conteudo.append("")
@@ -1513,8 +1531,8 @@ try:
     col1, col2 = st.columns(2)
     with col1:
         st.markdown("**2. CURSOS E ESTÁGIOS**")
-        for i, item in enumerate(bullets_cursos or ["-"], 1):
-            st.markdown(f" {i}) {item}")
+        for item in (bullets_cursos or ["-"]):
+            st.markdown(f" {item}")
     with col2:
         st.markdown("**3. DATAS COMEMORATIVAS E FERIADOS**")
         for item in (bullets_datas or ["-"]):
