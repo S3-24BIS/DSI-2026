@@ -26,18 +26,69 @@ SCOPES = [
 ]
 
 IDS = {
-    "s3":       "s3.24bis03@gmail.com",
-    "cmt":      "comando24bis@gmail.com",
-    "adj_cmdo": "gleysonsmelo141214@gmail.com",
-    "b_mus":    "bmus24bis@gmail.com",
-    "cia_2":    "jfsa2017@gmail.com",
-    "npor":     "npor.24bis.instrutor@gmail.com",
-    "pgi":      "915a351ec7e277234d1da0e597fb14c7455f6f1a5a05eea8de837095a6e70c9e@group.calendar.google.com",
-    "cursos":   "38d1be36abd6b1e2545500964d51074f66d24c36530a3ff677ef21b6b332f003@group.calendar.google.com",
-    "datas":    "c9905256a40d19cc4d9954f633783c1ee96f6ad70165b5b7800b63e31ceeef1f@group.calendar.google.com",
-    "si":       "d140cd6bbf50cb6e5754222732d27f20e9ee833aca680475c0f1f34e0df74fa0@group.calendar.google.com",
-    "fase":     "ac05541df4fd8c2dff7eeebe910442a84fd43a9ade0a8699b1d96cf6e2986d1e@group.calendar.google.com",
-    "operacoes":"a253be647f9dd8c1b044f0e89643a569d95cbd9054f4eb8401c373a4cb2dd667@group.calendar.google.com",
+    # ── Estado-Maior / Comando ──────────────────────────────
+    "s3":        "s3.24bis03@gmail.com",
+    "cmt":       "comando24bis@gmail.com",
+    "cmdo":      "cmdo24bis@gmail.com",
+    "sub_cmt":   "subcomandante.24bis@gmail.com",
+    "adj_cmdo":  "gleysonsmelo141214@gmail.com",
+    "sec_1":     "primeira1secao@gmail.com",
+    "sec_4":     "4secao24bis@gmail.com",
+    # ── Subunidades ────────────────────────────────────────
+    "cia_1":     "1cia.24bis@gmail.com",
+    "cia_1b":    "gurupi1cia@gmail.com",
+    "cia_1_sgt": "sargenteacaogurupi@gmail.com",
+    "cia_2":     "jfsa2017@gmail.com",
+    "cia_2b":    "timbira2cia@gmail.com",
+    "cia_2_sgt": "sgtetimbira@gmail.com",
+    "b_mus":     "bmus24bis@gmail.com",
+    "npor":      "npor.24bis.instrutor@gmail.com",
+    "npor_ste":  "allissonfeitosa1985@gmail.com",
+    # ── Órgãos de apoio ────────────────────────────────────
+    "ass_jur":   "assjur.24bis@gmail.com",
+    "brigada":   "brigada24bis@gmail.com",
+    "fisc_adm":  "capmarcusvinicius.40bi@gmail.com",
+    "chales":    "cmslchales@gmail.com",
+    "com_soc":   "comsoc24bis@gmail.com",
+    "fiscal":    "fiscal160105@gmail.com",
+    "prm":       "prmsaoluisma@gmail.com",
+    "sfpc":      "sfpc24bis@gmail.com",
+    # ── Agendas de grupo (Google Calendar IDs) ─────────────
+    "pgi":       "915a351ec7e277234d1da0e597fb14c7455f6f1a5a05eea8de837095a6e70c9e@group.calendar.google.com",
+    "cursos":    "38d1be36abd6b1e2545500964d51074f66d24c36530a3ff677ef21b6b332f003@group.calendar.google.com",
+    "datas":     "c9905256a40d19cc4d9954f633783c1ee96f6ad70165b5b7800b63e31ceeef1f@group.calendar.google.com",
+    "si":        "d140cd6bbf50cb6e5754222732d27f20e9ee833aca680475c0f1f34e0df74fa0@group.calendar.google.com",
+    "fase":      "ac05541df4fd8c2dff7eeebe910442a84fd43a9ade0a8699b1d96cf6e2986d1e@group.calendar.google.com",
+    "operacoes": "a253be647f9dd8c1b044f0e89643a569d95cbd9054f4eb8401c373a4cb2dd667@group.calendar.google.com",
+}
+
+# Mapa email → rótulo da coluna AG (usado em construir_tabela_semana)
+RESP_MAP = {
+    IDS["cmt"]:      "Cmt",
+    IDS["cmdo"]:     "Cmdo",
+    IDS["sub_cmt"]:  "Sub Cmt",
+    IDS["adj_cmdo"]: "Adj Cmdo",
+    IDS["sec_1"]:    "1ª Seção",
+    IDS["sec_4"]:    "4ª Seção",
+    IDS["cia_1"]:    "1ª Cia",
+    IDS["cia_1b"]:   "1ª Cia",
+    IDS["cia_1_sgt"]:"1ª Cia Sgt",
+    IDS["cia_2"]:    "2ª Cia",
+    IDS["cia_2b"]:   "2ª Cia",
+    IDS["cia_2_sgt"]:"2ª Cia Sgt",
+    IDS["b_mus"]:    "B Mus",
+    IDS["npor"]:     "NPOR",
+    IDS["npor_ste"]: "NPOR (STE)",
+    IDS["ass_jur"]:  "Ass Jur",
+    IDS["brigada"]:  "Brigada",
+    IDS["fisc_adm"]: "Fisc Adm",
+    IDS["chales"]:   "Chales",
+    IDS["com_soc"]:  "Com Soc",
+    IDS["fiscal"]:   "Fiscal",
+    IDS["prm"]:      "PRM",
+    IDS["sfpc"]:     "SFPC",
+    IDS["pgi"]:      "PGI",
+    IDS["s3"]:       "S3",
 }
 
 MEU_EMAIL = IDS["s3"]
@@ -47,16 +98,10 @@ MEU_EMAIL = IDS["s3"]
 # =========================================================
 
 def batch_update_com_retry(docs_service, doc_id, requests_list, max_tentativas=6, tamanho_lote=50):
-    """
-    Executa batchUpdate em lotes com retry exponencial em caso de 429.
-    - tamanho_lote: máximo de requests por chamada (limite seguro: 50)
-    - max_tentativas: quantas vezes tenta antes de relançar a exceção
-    - Backoff: 2^tentativa + jitter aleatório (0–1s)
-    """
     if not requests_list:
         return
 
-    DELAY_ENTRE_LOTES = 1.2  # segundos entre lotes com sucesso
+    DELAY_ENTRE_LOTES = 1.2
 
     for i in range(0, len(requests_list), tamanho_lote):
         lote = requests_list[i:i + tamanho_lote]
@@ -66,16 +111,16 @@ def batch_update_com_retry(docs_service, doc_id, requests_list, max_tentativas=6
                     documentId=doc_id, body={"requests": lote}
                 ).execute()
                 time.sleep(DELAY_ENTRE_LOTES)
-                break  # sucesso → próximo lote
+                break
             except HttpError as e:
                 if e.resp.status == 429:
                     espera = (2 ** tentativa) + random.uniform(0, 1)
                     print(f"[429] Rate limit — aguardando {espera:.1f}s (tentativa {tentativa + 1}/{max_tentativas})")
                     time.sleep(espera)
                     if tentativa == max_tentativas - 1:
-                        raise  # esgotou tentativas
+                        raise
                 else:
-                    raise  # outro erro HTTP → propaga imediatamente
+                    raise
 
 # =========================================================
 # FUNÇÕES DE TRATAMENTO
@@ -266,8 +311,13 @@ def list_events(service, calendar_id: str, d_ini: datetime.date, d_fim: datetime
 
 def carregar_todos_eventos_paralelo(srv, d_ini, d_fim):
     calendarios = [
-        "s3", "cmt", "adj_cmdo",
-        "b_mus", "cia_2", "npor",
+        "s3", "cmt", "cmdo", "sub_cmt", "adj_cmdo",
+        "sec_1", "sec_4",
+        "cia_1", "cia_1b", "cia_1_sgt",
+        "cia_2", "cia_2b", "cia_2_sgt",
+        "b_mus", "npor", "npor_ste",
+        "ass_jur", "brigada", "fisc_adm", "chales",
+        "com_soc", "fiscal", "prm", "sfpc",
         "pgi", "cursos", "datas", "si", "fase", "operacoes"
     ]
     with ThreadPoolExecutor(max_workers=6) as executor:
@@ -280,7 +330,7 @@ def carregar_todos_eventos_paralelo(srv, d_ini, d_fim):
             cal = futures[future]
             try:
                 resultados[cal] = future.result()
-            except Exception as e:
+            except Exception:
                 resultados[cal] = []
     return resultados
 
@@ -686,45 +736,72 @@ def buscar_atividades_futuras(service, fim_s1: datetime.date) -> list:
     return linhas
 
 # =========================================================
-# TABELAS — sem ThreadPoolExecutor (evita Segmentation fault)
+# TABELAS
+# Prioridade: número menor = agenda "dona" do evento quando
+# há duplicata pelo mesmo event_id em múltiplas agendas.
 # =========================================================
 
+# Prioridade por calendar_id — menor = mais prioritário
+PRIORIDADE_RESP = {
+    IDS["npor"]:     1,
+    IDS["npor_ste"]: 2,
+    IDS["b_mus"]:    3,
+    IDS["cia_1"]:    4,
+    IDS["cia_1b"]:   4,
+    IDS["cia_1_sgt"]:5,
+    IDS["cia_2"]:    6,
+    IDS["cia_2b"]:   6,
+    IDS["cia_2_sgt"]:7,
+    IDS["sec_1"]:    8,
+    IDS["sec_4"]:    9,
+    IDS["sfpc"]:     10,
+    IDS["fisc_adm"]: 11,
+    IDS["fiscal"]:   12,
+    IDS["ass_jur"]:  13,
+    IDS["com_soc"]:  14,
+    IDS["prm"]:      15,
+    IDS["brigada"]:  16,
+    IDS["chales"]:   17,
+    IDS["adj_cmdo"]: 18,
+    IDS["sub_cmt"]:  19,
+    IDS["cmdo"]:     20,
+    IDS["cmt"]:      21,
+    IDS["pgi"]:      22,
+    IDS["s3"]:       99,
+}
+
+# Lista de todas as agendas carregadas na tabela
+AGENDAS_TABELA = [
+    "s3", "cmt", "cmdo", "sub_cmt", "adj_cmdo",
+    "sec_1", "sec_4",
+    "cia_1", "cia_1b", "cia_1_sgt",
+    "cia_2", "cia_2b", "cia_2_sgt",
+    "b_mus", "npor", "npor_ste",
+    "ass_jur", "brigada", "fisc_adm", "chales",
+    "com_soc", "fiscal", "prm", "sfpc",
+]
+
 def construir_tabela_semana(service, d_ini, d_fim, incluir_cmt, incluir_pgi, feriados):
-    ev_s3   = list_events(service, IDS["s3"],       d_ini, d_fim)
-    ev_adj  = list_events(service, IDS["adj_cmdo"], d_ini, d_fim)
-    ev_bmus = list_events(service, IDS["b_mus"],    d_ini, d_fim)
-    ev_cia2 = list_events(service, IDS["cia_2"],    d_ini, d_fim)
-    ev_npor = list_events(service, IDS["npor"],     d_ini, d_fim)
+    todos = []
 
-    ev_cmd = []
-    if incluir_cmt:
-        ev_cmd = list_events(service, IDS["cmt"], d_ini, d_fim)
+    for chave in AGENDAS_TABELA:
+        if chave == "cmt" and not incluir_cmt:
+            continue
+        evs = list_events(service, IDS[chave], d_ini, d_fim)
+        todos.extend(evs)
 
-    ev_pgi = []
     if incluir_pgi:
-        ev_pgi = list_events(service, IDS["pgi"], d_ini, d_fim)
+        evs_pgi = list_events(service, IDS["pgi"], d_ini, d_fim)
+        todos.extend(evs_pgi)
 
-    todos = ev_s3 + ev_adj + ev_bmus + ev_cia2 + ev_npor + ev_cmd + ev_pgi
-
-    PRIORIDADE_RESP = {
-        IDS["npor"]:     1,
-        IDS["b_mus"]:    2,
-        IDS["cia_2"]:    3,
-        IDS["adj_cmdo"]: 4,
-        IDS["cmt"]:      5,
-        IDS["pgi"]:      6,
-        IDS["s3"]:       99,
-    }
-
-    evs = dedup_by_event_id(todos)
-
+    # Desduplicação com prioridade
     mapa_titulo = {}
-    for e in evs:
+    for e in todos:
         s_date, e_date, is_all_day, hora = parse_start_end(e)
-        titulo = limpar_texto(e.get("summary", "")).strip()
+        titulo    = limpar_texto(e.get("summary", "")).strip()
         hora_norm = "D" if is_all_day else hora
         chave_titulo = f"{titulo}_{s_date}_{hora_norm}"
-        src = e.get("_src_calendar_id", "")
+        src       = e.get("_src_calendar_id", "")
         prioridade = PRIORIDADE_RESP.get(src, 50)
 
         if chave_titulo not in mapa_titulo:
@@ -758,27 +835,10 @@ def construir_tabela_semana(service, d_ini, d_fim, incluir_cmt, incluir_pgi, fer
                 data_iso = start.get("dateTime", start.get("date", ""))
                 hora     = data_iso[11:16] if "T" in data_iso else "D"
 
-                atividade     = limpar_texto(e.get("summary",     "S/T"))
-                local         = limpar_texto(e.get("location",    ""))
-                descricao_raw = limpar_texto(e.get("description", ""))
-                obs           = descricao_raw[:120] + ("…" if len(descricao_raw) > 120 else "")
-
-                src = e.get("_src_calendar_id", "")
-
-                if src == IDS["cmt"]:
-                    resp = "Cmt"
-                elif src == IDS["pgi"]:
-                    resp = "PGI"
-                elif src == IDS["adj_cmdo"]:
-                    resp = "Adj Cmdo"
-                elif src == IDS["b_mus"]:
-                    resp = "B Mus"
-                elif src == IDS["cia_2"]:
-                    resp = "2ª Cia"
-                elif src == IDS["npor"]:
-                    resp = "NPOR"
-                else:
-                    resp = "S3"
+                atividade = limpar_texto(e.get("summary",  "S/T"))
+                local     = limpar_texto(e.get("location", ""))
+                src       = e.get("_src_calendar_id", "")
+                resp      = RESP_MAP.get(src, "S3")
 
                 rows.append({
                     "DATA":      fmt_data_coluna(cur) if i == 0 else "",
@@ -787,7 +847,7 @@ def construir_tabela_semana(service, d_ini, d_fim, incluir_cmt, incluir_pgi, fer
                     "LOCAL":     local,
                     "UNIF":      "",
                     "AGENDA":    resp,
-                    "OBS":       obs,
+                    "OBS":       "",
                     "_especial": eh_especial if i == 0 else False
                 })
 
@@ -799,17 +859,19 @@ def construir_tabela_semana(service, d_ini, d_fim, incluir_cmt, incluir_pgi, fer
 # EXPORTAÇÃO EXCEL
 # =========================================================
 
-def exportar_excel(rows_s, rows_s1, num_fmt, si, fase, operacoes_linhas, ativ_futuras_linhas):
+def exportar_excel(rows_sm1, rows_s, rows_s1, num_fmt, si, fase, operacoes_linhas, ativ_futuras_linhas):
     try:
         output = io.BytesIO()
         operacoes_texto    = "\n".join(operacoes_linhas)    if operacoes_linhas    else "-"
         ativ_futuras_texto = "\n".join(ativ_futuras_linhas) if ativ_futuras_linhas else "-"
 
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df_s  = pd.DataFrame(rows_s).drop(columns=['_especial'], errors='ignore')
-            df_s1 = pd.DataFrame(rows_s1).drop(columns=['_especial'], errors='ignore')
-            df_s.to_excel(writer,  sheet_name='Semana S',   index=False)
-            df_s1.to_excel(writer, sheet_name='Semana S+1', index=False)
+            df_sm1 = pd.DataFrame(rows_sm1).drop(columns=['_especial'], errors='ignore')
+            df_s   = pd.DataFrame(rows_s).drop(columns=['_especial'],   errors='ignore')
+            df_s1  = pd.DataFrame(rows_s1).drop(columns=['_especial'],  errors='ignore')
+            df_sm1.to_excel(writer, sheet_name='Semana S-1', index=False)
+            df_s.to_excel(writer,   sheet_name='Semana S',   index=False)
+            df_s1.to_excel(writer,  sheet_name='Semana S+1', index=False)
 
             info_df = pd.DataFrame({
                 'Campo': ['Número DSI', 'SI', 'FASE', 'Operações', 'Atividades Futuras'],
@@ -820,12 +882,15 @@ def exportar_excel(rows_s, rows_s1, num_fmt, si, fase, operacoes_linhas, ativ_fu
         return output.getvalue()
     except ImportError:
         output = io.StringIO()
-        df_s  = pd.DataFrame(rows_s).drop(columns=['_especial'], errors='ignore')
-        df_s1 = pd.DataFrame(rows_s1).drop(columns=['_especial'], errors='ignore')
+        df_sm1 = pd.DataFrame(rows_sm1).drop(columns=['_especial'], errors='ignore')
+        df_s   = pd.DataFrame(rows_s).drop(columns=['_especial'],   errors='ignore')
+        df_s1  = pd.DataFrame(rows_s1).drop(columns=['_especial'],  errors='ignore')
         output.write(f"DSI Nº {num_fmt} - SI {si} - FASE {fase}\n")
         output.write(f"Operações:\n{operacoes_texto}\n\n")
         output.write(f"Atividades Futuras:\n{ativ_futuras_texto}\n\n")
-        output.write("=== SEMANA S ===\n")
+        output.write("=== SEMANA S-1 ===\n")
+        output.write(df_sm1.to_csv(index=False))
+        output.write("\n=== SEMANA S ===\n")
         output.write(df_s.to_csv(index=False))
         output.write("\n=== SEMANA S+1 ===\n")
         output.write(df_s1.to_csv(index=False))
@@ -849,9 +914,10 @@ def salvar_historico(num_dsi: int, periodo: str, doc_id: str):
 # GOOGLE DOCS
 # =========================================================
 
-def criar_google_doc(creds, titulo_doc, num_fmt, ref_date, ini_s, fim_s, ini_s1, fim_s1,
+def criar_google_doc(creds, titulo_doc, num_fmt, ref_date,
+                     ini_sm1, fim_sm1, ini_s, fim_s, ini_s1, fim_s1,
                      si, fase, operacoes_linhas, bullets_cursos, bullets_datas,
-                     rows_s, rows_s1, ativ_futuras_linhas,
+                     rows_sm1, rows_s, rows_s1, ativ_futuras_linhas,
                      fg=None, su="", ativ_nao_exec=""):
     if fg is None:
         fg = {"finalidade": "", "dia": "", "dobrado": "", "cancao": "", "gs": "", "armado": ""}
@@ -902,16 +968,29 @@ def criar_google_doc(creds, titulo_doc, num_fmt, ref_date, ini_s, fim_s, ini_s1,
         conteudo.append("-")
     conteudo.append("")
 
-    conteudo.append("4. PERÍODO")
+    conteudo.append("4. INSTRUÇÃO")
     conteudo.append("")
-    conteudo.append(f" a. Semana (S) - {fmt_periodo_titulo(ini_s, fim_s)}")
+    conteudo.append(f" a. Semana (S-1) - {fmt_periodo_titulo(ini_sm1, fim_sm1)}")
     conteudo.append("")
 
     texto_completo = "\n".join(conteudo)
 
-    # --- Inserção do texto inicial (1 chamada) ---
+    # --- Inserção do texto inicial ---
     batch_update_com_retry(docs_service, doc_id, [
         {'insertText': {'location': {'index': 1}, 'text': texto_completo}}
+    ])
+
+    # --- Tabela Semana S-1 ---
+    doc_atual = docs_service.documents().get(documentId=doc_id).execute()
+    end_index = doc_atual['body']['content'][-1]['endIndex']
+    inserir_e_preencher_tabela(docs_service, doc_id, rows_sm1, end_index - 1)
+
+    # --- Cabeçalho Semana S ---
+    doc_atual = docs_service.documents().get(documentId=doc_id).execute()
+    end_index = doc_atual['body']['content'][-1]['endIndex']
+    texto_s   = f"\n b. Semana (S) - {fmt_periodo_titulo(ini_s, fim_s)}\n"
+    batch_update_com_retry(docs_service, doc_id, [
+        {'insertText': {'location': {'index': end_index - 1}, 'text': texto_s}}
     ])
 
     # --- Tabela Semana S ---
@@ -922,7 +1001,7 @@ def criar_google_doc(creds, titulo_doc, num_fmt, ref_date, ini_s, fim_s, ini_s1,
     # --- Cabeçalho Semana S+1 ---
     doc_atual = docs_service.documents().get(documentId=doc_id).execute()
     end_index = doc_atual['body']['content'][-1]['endIndex']
-    texto_s1  = f"\n b. 2. Semana (S+1) - {fmt_periodo_titulo(ini_s1, fim_s1)}\n"
+    texto_s1  = f"\n c. Semana (S+1) - {fmt_periodo_titulo(ini_s1, fim_s1)}\n"
     batch_update_com_retry(docs_service, doc_id, [
         {'insertText': {'location': {'index': end_index - 1}, 'text': texto_s1}}
     ])
@@ -980,9 +1059,9 @@ def criar_google_doc(creds, titulo_doc, num_fmt, ref_date, ini_s, fim_s, ini_s1,
         {'insertText': {'location': {'index': end_index - 1}, 'text': "\n".join(conteudo_final)}}
     ])
 
-    # --- Formatação global (pausa maior antes para o Docs processar) ---
+    # --- Formatação global ---
     time.sleep(3)
-    formatar_documento_completo(docs_service, doc_id, rows_s, rows_s1)
+    formatar_documento_completo(docs_service, doc_id, rows_sm1, rows_s, rows_s1)
     return doc_id
 
 # =========================================================
@@ -990,11 +1069,10 @@ def criar_google_doc(creds, titulo_doc, num_fmt, ref_date, ini_s, fim_s, ini_s1,
 # =========================================================
 
 def inserir_e_preencher_tabela(docs_service, doc_id, rows, insert_index):
-    # Insere a tabela e aguarda o Docs processá-la
     batch_update_com_retry(docs_service, doc_id, [
         {'insertTable': {'rows': len(rows) + 1, 'columns': 7, 'location': {'index': insert_index}}}
     ])
-    time.sleep(2)  # pausa maior: garante que a tabela esteja disponível antes do próximo get
+    time.sleep(2)
 
     def get_ultima_tabela():
         doc     = docs_service.documents().get(documentId=doc_id).execute()
@@ -1010,7 +1088,6 @@ def inserir_e_preencher_tabela(docs_service, doc_id, rows, insert_index):
 
     larguras_pt = [95, 38, 170, 125, 28, 28, 28]
 
-    # Ajusta largura das colunas
     doc_temp = docs_service.documents().get(documentId=doc_id).execute()
     for el in reversed(doc_temp['body']['content']):
         if 'table' in el:
@@ -1095,7 +1172,6 @@ def aplicar_formatacao_tabela(docs_service, doc_id, rows, grupos_data):
     table_start = tabela_element['startIndex']
     requests    = []
 
-    # Bordas em todas as células
     for row_idx in range(len(tabela.get('tableRows', []))):
         for col_idx in range(7):
             borda = {'color': {'color': {'rgbColor': {'red': 0, 'green': 0, 'blue': 0}}}, 'width': {'magnitude': 1, 'unit': 'PT'}, 'dashStyle': 'SOLID'}
@@ -1105,7 +1181,6 @@ def aplicar_formatacao_tabela(docs_service, doc_id, rows, grupos_data):
                 'fields': 'borderTop,borderBottom,borderLeft,borderRight'
             }})
 
-    # Fundo cinza no cabeçalho
     for col_idx in range(7):
         requests.append({'updateTableCellStyle': {
             'tableRange': {'tableCellLocation': {'tableStartLocation': {'index': table_start}, 'rowIndex': 0, 'columnIndex': col_idx}, 'rowSpan': 1, 'columnSpan': 1},
@@ -1113,14 +1188,12 @@ def aplicar_formatacao_tabela(docs_service, doc_id, rows, grupos_data):
             'fields': 'backgroundColor'
         }})
 
-    # Mescla células da coluna DATA
     for data, indices in grupos_data.items():
         if len(indices) > 1:
             requests.append({'mergeTableCells': {
                 'tableRange': {'tableCellLocation': {'tableStartLocation': {'index': table_start}, 'rowIndex': indices[0] + 1, 'columnIndex': 0}, 'rowSpan': len(indices), 'columnSpan': 1}
             }})
 
-    # Cores alternadas (vermelho para especiais)
     cor_alternada = True
     for data, indices in grupos_data.items():
         eh_dia_especial = any(rows[idx].get('_especial', False) for idx in indices)
@@ -1138,7 +1211,6 @@ def aplicar_formatacao_tabela(docs_service, doc_id, rows, grupos_data):
         if not eh_dia_especial:
             cor_alternada = not cor_alternada
 
-    # Alinhamento central e padding
     for row_idx in range(len(rows) + 1):
         if row_idx < len(tabela.get('tableRows', [])):
             row_cells = tabela['tableRows'][row_idx].get('tableCells', [])
@@ -1158,7 +1230,6 @@ def aplicar_formatacao_tabela(docs_service, doc_id, rows, grupos_data):
     if requests:
         batch_update_com_retry(docs_service, doc_id, requests)
 
-    # Negrito e cor branca no cabeçalho (leitura atualizada do doc)
     time.sleep(0.5)
     doc = docs_service.documents().get(documentId=doc_id).execute()
     tabela_element = None
@@ -1189,20 +1260,18 @@ def aplicar_formatacao_tabela(docs_service, doc_id, rows, grupos_data):
                 print(f"Erro negrito: {e}")
 
 
-def formatar_documento_completo(docs_service, doc_id, rows_s, rows_s1):
+def formatar_documento_completo(docs_service, doc_id, rows_sm1, rows_s, rows_s1):
     doc       = docs_service.documents().get(documentId=doc_id).execute()
     content   = doc['body']['content']
     end_index = content[-1]['endIndex']
     requests  = []
 
-    # Fonte e tamanho globais
     requests.append({'updateTextStyle': {
         'range': {'startIndex': 1, 'endIndex': end_index - 1},
         'textStyle': {'fontSize': {'magnitude': 12, 'unit': 'PT'}, 'weightedFontFamily': {'fontFamily': 'Calibri'}},
         'fields': 'fontSize,weightedFontFamily'
     }})
 
-    # Margens do documento
     requests.append({'updateDocumentStyle': {
         'documentStyle': {
             'marginTop':    {'magnitude': 28.35, 'unit': 'PT'},
@@ -1217,14 +1286,11 @@ def formatar_documento_completo(docs_service, doc_id, rows_s, rows_s1):
         batch_update_com_retry(docs_service, doc_id, requests)
         requests = []
 
-    # Negrito nos títulos das seções — usa índices reais dos elementos do documento
-    # (nunca recalcula posição via len() de string concatenada, pois os índices do
-    # Google Docs são estruturais e não correspondem a offsets de caracteres lineares)
     padroes_negrito = [
         r"1\.\s+OPERA[ÇC][ÕO]ES[:\s]?",
         r"2\.\s+CURSOS E EST[ÁA]GIOS",
         r"3\.\s+DATAS COMEMORATIVAS",
-        r"4\.\s+PER[ÍI]ODO",
+        r"4\.\s+INSTRU[ÇC][ÃA]O",
         r"5\.\s+FORMATURA GERAL",
         r"6\.\s+ATIVIDADES FUTURAS",
         r"7\.\s+SU\b",
@@ -1244,10 +1310,8 @@ def formatar_documento_completo(docs_service, doc_id, rows_s, rows_s1):
             run_end   = pe.get('endIndex')
             if run_start is None or run_end is None or run_end <= run_start:
                 continue
-            # Verifica se este textRun bate com algum padrão de título
             for padrao in padroes_negrito:
                 if re.search(padrao, texto_run, re.IGNORECASE):
-                    # Garante que o range não ultrapasse o fim do documento
                     safe_end = min(run_end, end_index - 1)
                     if safe_end > run_start:
                         requests.append({'updateTextStyle': {
@@ -1255,7 +1319,7 @@ def formatar_documento_completo(docs_service, doc_id, rows_s, rows_s1):
                             'textStyle': {'bold': True},
                             'fields': 'bold'
                         }})
-                    break  # não precisa checar os outros padrões para este run
+                    break
 
     if requests:
         batch_update_com_retry(docs_service, doc_id, requests)
@@ -1334,6 +1398,8 @@ try:
         st.info("💡 **Dica:** Use Ctrl+F para buscar no documento")
 
     ini_s, fim_s = week_range(ref_date)
+    ini_sm1      = ini_s - datetime.timedelta(days=7)
+    fim_sm1      = fim_s - datetime.timedelta(days=7)
     ini_s1       = ini_s + datetime.timedelta(days=7)
     fim_s1       = fim_s + datetime.timedelta(days=7)
 
@@ -1352,6 +1418,7 @@ try:
     linha_qts = f"(QTS nº {num_fmt} - SI: {si} - FASE: {fase})"
 
     with st.expander("🔍 Debug - SI, FASE, OPERAÇÕES e ATIVIDADES FUTURAS"):
+        st.write(f"**Período S-1:** {ini_sm1.strftime('%d/%m/%Y')} a {fim_sm1.strftime('%d/%m/%Y')}")
         st.write(f"**Período S:** {ini_s.strftime('%d/%m/%Y')} a {fim_s.strftime('%d/%m/%Y')}")
         st.write(f"**Período S+1:** {ini_s1.strftime('%d/%m/%Y')} a {fim_s1.strftime('%d/%m/%Y')}")
         st.write(f"**Ativ. Futuras:** {fim_s1 + datetime.timedelta(days=1)} a {fim_s1 + datetime.timedelta(days=45)}")
@@ -1363,10 +1430,11 @@ try:
 
     bullets_cursos = bullets_periodo(srv, IDS["cursos"], ini_s, fim_s1, incluir_responsavel=True)
     bullets_datas  = bullets_periodo(srv, IDS["datas"],  ini_s, fim_s1)
-    feriados       = buscar_feriados(srv, ini_s, fim_s1)
+    feriados       = buscar_feriados(srv, ini_sm1, fim_s1)
 
-    rows_s  = construir_tabela_semana(srv, ini_s,  fim_s,  incluir_cmt, incluir_pgi, feriados)
-    rows_s1 = construir_tabela_semana(srv, ini_s1, fim_s1, incluir_cmt, incluir_pgi, feriados)
+    rows_sm1 = construir_tabela_semana(srv, ini_sm1, fim_sm1, incluir_cmt, incluir_pgi, feriados)
+    rows_s   = construir_tabela_semana(srv, ini_s,   fim_s,   incluir_cmt, incluir_pgi, feriados)
+    rows_s1  = construir_tabela_semana(srv, ini_s1,  fim_s1,  incluir_cmt, incluir_pgi, feriados)
 
     if st.session_state.exportar and st.session_state.doc_criado is None:
         fg = {k: st.session_state.get(f"fg_{k}", "")
@@ -1376,9 +1444,9 @@ try:
             try:
                 doc_id = criar_google_doc_safe(
                     creds, titulo_dsi, num_fmt, ref_date,
-                    ini_s, fim_s, ini_s1, fim_s1,
+                    ini_sm1, fim_sm1, ini_s, fim_s, ini_s1, fim_s1,
                     si, fase, operacoes_linhas, bullets_cursos, bullets_datas,
-                    rows_s, rows_s1,
+                    rows_sm1, rows_s, rows_s1,
                     ativ_futuras_linhas=ativ_futuras_linhas,
                     fg=fg,
                     su=st.session_state.get("su_texto", ""),
@@ -1406,7 +1474,7 @@ try:
             st.rerun()
 
     try:
-        excel_data = exportar_excel(rows_s, rows_s1, num_fmt, si, fase, operacoes_linhas, ativ_futuras_linhas)
+        excel_data = exportar_excel(rows_sm1, rows_s, rows_s1, num_fmt, si, fase, operacoes_linhas, ativ_futuras_linhas)
         file_ext   = "xlsx" if isinstance(excel_data, bytes) and excel_data[:2] == b'PK' else "csv"
         mime_type  = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" if file_ext == "xlsx" else "text/csv"
         st.download_button(
@@ -1483,11 +1551,17 @@ try:
         html += "</tbody></table>"
         return html
 
-    st.markdown("**4. PERÍODO**")
-    st.markdown(f"**a. Semana (S) - {fmt_periodo_titulo(ini_s, fim_s)}**")
+    st.markdown("**4. INSTRUÇÃO**")
+
+    st.markdown(f"**a. Semana (S-1) - {fmt_periodo_titulo(ini_sm1, fim_sm1)}** *(referência — confirme o que foi executado na seção 8)*")
+    st.markdown(render_tabela_html(rows_sm1, [r.get('_especial', False) for r in rows_sm1], table_id="tabela_sm1"), unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    st.markdown(f"**b. Semana (S) - {fmt_periodo_titulo(ini_s, fim_s)}**")
     st.markdown(render_tabela_html(rows_s,  [r.get('_especial', False) for r in rows_s],  table_id="tabela_s"),  unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
-    st.markdown(f"**b. Semana (S+1) - {fmt_periodo_titulo(ini_s1, fim_s1)}**")
+
+    st.markdown(f"**c. Semana (S+1) - {fmt_periodo_titulo(ini_s1, fim_s1)}**")
     st.markdown(render_tabela_html(rows_s1, [r.get('_especial', False) for r in rows_s1], table_id="tabela_s1"), unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
 
