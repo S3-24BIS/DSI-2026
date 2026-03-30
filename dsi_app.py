@@ -531,11 +531,12 @@ def buscar_operacoes(service, d_ini_s, d_fim_s1):
     operacoes_ordenadas = sorted(operacoes_unicas.values(), key=lambda x: x['data_inicio'])
 
     linhas_formatadas = []
-    for i, op in enumerate(operacoes_ordenadas, 1):
+    for op in operacoes_ordenadas:
+        # ✅ CORREÇÃO 1: removidos numeração ({i}) e traços (__ Militares / ___)
         if op['tipo']:
-            linha = f" {i}) {op['nome']} ({op['tipo']}) - __ Militares - _____________"
+            linha = f" {op['nome']} ({op['tipo']})"
         else:
-            linha = f" {i}) {op['nome']} - __ Militares - _____________"
+            linha = f" {op['nome']}"
         linhas_formatadas.append(linha)
 
     return linhas_formatadas
@@ -602,8 +603,8 @@ def bullets_periodo(service, calendar_id: str, d_ini: datetime.date, d_fim: date
             lista_mil = [m.strip() for m in re.split(r'[,;\n]', militares) if m.strip()]
             if lista_mil:
                 texto += " - " + ", ".join(lista_mil)
-        if incluir_responsavel:
-            texto += " - _____________"
+
+        # ✅ CORREÇÃO 2: removido bloco "if incluir_responsavel: texto += ' - ___'"
 
         linhas.append((s_date, texto))
 
@@ -781,7 +782,8 @@ AGENDAS_TABELA = [
     "com_soc", "fiscal", "prm", "sfpc",
 ]
 
-def construir_tabela_semana(service, d_ini, d_fim, incluir_cmt, incluir_pgi, feriados):
+def construir_tabela_semana(service, d_ini, d_fim, incluir_cmt, incluir_pgi, feriados, semana_tipo="s"):
+    # semana_tipo: "sm1" | "s" | "s1"
     todos = []
 
     for chave in AGENDAS_TABELA:
@@ -824,10 +826,11 @@ def construir_tabela_semana(service, d_ini, d_fim, incluir_cmt, incluir_pgi, fer
 
         if not evs_dia:
             rows.append({
-                "DATA": fmt_data_coluna(cur),
-                "HORA": "", "ATIVIDADE": "", "LOCAL": "",
-                "UNIF": "", "AGENDA": "", "OBS": "",
-                "_especial": eh_especial
+                "DATA":      fmt_data_coluna(cur),
+                "HORA":      "", "ATIVIDADE": "", "ATIV_DESC": "",
+                "LOCAL":     "", "UNIF":      "", "AGENDA":    "",
+                "OBS":       "", "STATUS":    "",
+                "_especial": eh_especial, "_tem_desc": False,
             })
         else:
             for i, e in enumerate(evs_dia):
@@ -835,20 +838,31 @@ def construir_tabela_semana(service, d_ini, d_fim, incluir_cmt, incluir_pgi, fer
                 data_iso = start.get("dateTime", start.get("date", ""))
                 hora     = data_iso[11:16] if "T" in data_iso else "D"
 
-                atividade = limpar_texto(e.get("summary",  "S/T"))
-                local     = limpar_texto(e.get("location", ""))
-                src       = e.get("_src_calendar_id", "")
-                resp      = RESP_MAP.get(src, "S3")
+                atividade    = limpar_texto(e.get("summary",  "S/T"))
+                local        = limpar_texto(e.get("location", ""))
+                src          = e.get("_src_calendar_id", "")
+                resp         = RESP_MAP.get(src, "S3")
+                descricao    = limpar_texto(e.get("description", "")).strip()
+
+                # Description em azul entre parênteses — apenas primeira linha
+                if descricao:
+                    primeira_linha_desc = descricao.split("  ")[0].split("\n")[0].strip()[:120]
+                    atividade_exib = f"{atividade} ({primeira_linha_desc})"
+                else:
+                    atividade_exib = atividade
 
                 rows.append({
-                    "DATA":      fmt_data_coluna(cur) if i == 0 else "",
-                    "HORA":      hora,
-                    "ATIVIDADE": atividade,
-                    "LOCAL":     local,
-                    "UNIF":      "",
-                    "AGENDA":    resp,
-                    "OBS":       "",
-                    "_especial": eh_especial if i == 0 else False
+                    "DATA":        fmt_data_coluna(cur) if i == 0 else "",
+                    "HORA":        hora,
+                    "ATIVIDADE":   atividade,
+                    "ATIV_DESC":   atividade_exib,   # com description em azul
+                    "LOCAL":       local,
+                    "UNIF":        "",
+                    "AGENDA":      resp,
+                    "OBS":         "",
+                    "STATUS":      "",
+                    "_especial":   eh_especial if i == 0 else False,
+                    "_tem_desc":   bool(descricao),
                 })
 
         cur += datetime.timedelta(days=1)
@@ -954,8 +968,9 @@ def criar_google_doc(creds, titulo_doc, num_fmt, ref_date,
 
     conteudo.append("2. CURSOS E ESTÁGIOS")
     if bullets_cursos:
-        for i, b in enumerate(bullets_cursos, 1):
-            conteudo.append(f" {i}) {b}")
+        # ✅ CORREÇÃO 3: removida numeração automática ({i}) dos cursos
+        for b in bullets_cursos:
+            conteudo.append(f" {b}")
     else:
         conteudo.append("-")
     conteudo.append("")
@@ -970,7 +985,8 @@ def criar_google_doc(creds, titulo_doc, num_fmt, ref_date,
 
     conteudo.append("4. INSTRUÇÃO")
     conteudo.append("")
-    conteudo.append(f" a. Semana (S-1) - {fmt_periodo_titulo(ini_sm1, fim_sm1)}")
+    conteudo.append(f" a. Semana (S-1) - {fmt_periodo_titulo(ini_sm1, fim_sm1)} - CONFIRMAR OU REAGENDAR")
+    conteudo.append(" (Realizado - Realizado/Histórico - Reagendado)")
     conteudo.append("")
 
     texto_completo = "\n".join(conteudo)
@@ -983,12 +999,12 @@ def criar_google_doc(creds, titulo_doc, num_fmt, ref_date,
     # --- Tabela Semana S-1 ---
     doc_atual = docs_service.documents().get(documentId=doc_id).execute()
     end_index = doc_atual['body']['content'][-1]['endIndex']
-    inserir_e_preencher_tabela(docs_service, doc_id, rows_sm1, end_index - 1)
+    inserir_e_preencher_tabela(docs_service, doc_id, rows_sm1, end_index - 1, semana_tipo="sm1")
 
     # --- Cabeçalho Semana S ---
     doc_atual = docs_service.documents().get(documentId=doc_id).execute()
     end_index = doc_atual['body']['content'][-1]['endIndex']
-    texto_s   = f"\n b. Semana (S) - {fmt_periodo_titulo(ini_s, fim_s)}\n"
+    texto_s   = f"\n b. Semana (S) - {fmt_periodo_titulo(ini_s, fim_s)} - EXECUTAR OU REAGENDAR\n"
     batch_update_com_retry(docs_service, doc_id, [
         {'insertText': {'location': {'index': end_index - 1}, 'text': texto_s}}
     ])
@@ -996,12 +1012,12 @@ def criar_google_doc(creds, titulo_doc, num_fmt, ref_date,
     # --- Tabela Semana S ---
     doc_atual = docs_service.documents().get(documentId=doc_id).execute()
     end_index = doc_atual['body']['content'][-1]['endIndex']
-    inserir_e_preencher_tabela(docs_service, doc_id, rows_s, end_index - 1)
+    inserir_e_preencher_tabela(docs_service, doc_id, rows_s, end_index - 1, semana_tipo="s")
 
     # --- Cabeçalho Semana S+1 ---
     doc_atual = docs_service.documents().get(documentId=doc_id).execute()
     end_index = doc_atual['body']['content'][-1]['endIndex']
-    texto_s1  = f"\n c. Semana (S+1) - {fmt_periodo_titulo(ini_s1, fim_s1)}\n"
+    texto_s1  = f"\n c. Semana (S+1) - {fmt_periodo_titulo(ini_s1, fim_s1)} - PLANEJAR\n"
     batch_update_com_retry(docs_service, doc_id, [
         {'insertText': {'location': {'index': end_index - 1}, 'text': texto_s1}}
     ])
@@ -1009,7 +1025,7 @@ def criar_google_doc(creds, titulo_doc, num_fmt, ref_date,
     # --- Tabela Semana S+1 ---
     doc_atual = docs_service.documents().get(documentId=doc_id).execute()
     end_index = doc_atual['body']['content'][-1]['endIndex']
-    inserir_e_preencher_tabela(docs_service, doc_id, rows_s1, end_index - 1)
+    inserir_e_preencher_tabela(docs_service, doc_id, rows_s1, end_index - 1, semana_tipo="s1")
 
     # --- Conteúdo final (seções 5–8 + assinatura) ---
     doc_atual = docs_service.documents().get(documentId=doc_id).execute()
@@ -1068,9 +1084,10 @@ def criar_google_doc(creds, titulo_doc, num_fmt, ref_date,
 # GOOGLE DOCS – TABELA
 # =========================================================
 
-def inserir_e_preencher_tabela(docs_service, doc_id, rows, insert_index):
+def inserir_e_preencher_tabela(docs_service, doc_id, rows, insert_index, semana_tipo="s"):
+    num_cols = 8 if semana_tipo == "sm1" else 7
     batch_update_com_retry(docs_service, doc_id, [
-        {'insertTable': {'rows': len(rows) + 1, 'columns': 7, 'location': {'index': insert_index}}}
+        {'insertTable': {'rows': len(rows) + 1, 'columns': num_cols, 'location': {'index': insert_index}}}
     ])
     time.sleep(2)
 
@@ -1086,7 +1103,10 @@ def inserir_e_preencher_tabela(docs_service, doc_id, rows, insert_index):
     if not tabela:
         return
 
-    larguras_pt = [95, 38, 170, 125, 28, 28, 28]
+    if semana_tipo == "sm1":
+        larguras_pt = [75, 35, 155, 100, 28, 28, 55]   # 8 cols: +STATUS
+    else:
+        larguras_pt = [95, 38, 185, 125, 28, 28, 28]   # 7 cols
 
     doc_temp = docs_service.documents().get(documentId=doc_id).execute()
     for el in reversed(doc_temp['body']['content']):
@@ -1117,14 +1137,20 @@ def inserir_e_preencher_tabela(docs_service, doc_id, rows, insert_index):
             grupos_data[data_atual].append(idx)
 
     all_requests = []
-    cols = ["DATA", "HORA", "ATIVIDADE", "LOCAL", "UNIF", "AGENDA", "OBS"]
+    if semana_tipo == "sm1":
+        cols    = ["DATA", "HORA", "ATIV_DESC", "LOCAL", "UNIF", "AGENDA", "STATUS"]
+        headers = ["DATA", "HORA", "ATIVIDADE", "LOCAL", "UNIF", "AG",     "STATUS"]
+    else:
+        cols    = ["DATA", "HORA", "ATIV_DESC", "LOCAL", "UNIF", "AGENDA", "OBS"]
+        headers = ["DATA", "HORA", "ATIVIDADE", "LOCAL", "UNIF", "AG",     "OBS"]
+    n_cols = len(cols)
 
     for row_idx in range(len(rows) - 1, -1, -1):
         if row_idx + 1 >= len(tabela['tableRows']):
             continue
         linha_tabela = tabela['tableRows'][row_idx + 1]
         row_data     = rows[row_idx]
-        for col_idx in range(6, -1, -1):
+        for col_idx in range(n_cols - 1, -1, -1):
             if col_idx < len(linha_tabela['tableCells']):
                 celula       = linha_tabela['tableCells'][col_idx]
                 cell_content = celula.get('content')
@@ -1137,8 +1163,7 @@ def inserir_e_preencher_tabela(docs_service, doc_id, rows, insert_index):
                             all_requests.append({'insertText': {'location': {'index': start_idx}, 'text': texto}})
 
     primeira_linha = tabela['tableRows'][0]
-    headers = ["DATA", "HORA", "ATIVIDADE", "LOCAL", "UNIF", "AGENDA", "OBS"]
-    for i in range(6, -1, -1):
+    for i in range(n_cols - 1, -1, -1):
         if i < len(primeira_linha['tableCells']):
             cell_content = primeira_linha['tableCells'][i].get('content')
             if cell_content:
@@ -1153,10 +1178,10 @@ def inserir_e_preencher_tabela(docs_service, doc_id, rows, insert_index):
             print(f"Erro preencher tabela: {e}")
 
     time.sleep(0.5)
-    aplicar_formatacao_tabela(docs_service, doc_id, rows, grupos_data)
+    aplicar_formatacao_tabela(docs_service, doc_id, rows, grupos_data, semana_tipo=semana_tipo)
 
 
-def aplicar_formatacao_tabela(docs_service, doc_id, rows, grupos_data):
+def aplicar_formatacao_tabela(docs_service, doc_id, rows, grupos_data, semana_tipo="s"):
     doc     = docs_service.documents().get(documentId=doc_id).execute()
     content = doc['body']['content']
 
@@ -1259,6 +1284,72 @@ def aplicar_formatacao_tabela(docs_service, doc_id, rows, grupos_data):
             except Exception as e:
                 print(f"Erro negrito: {e}")
 
+    # --- Colorir description (em azul) nas células de ATIVIDADE ---
+    # e colorir STATUS nas células correspondentes
+    try:
+        doc_refresco = docs_service.documents().get(documentId=doc_id).execute()
+        tabela_el2   = None
+        for el in reversed(doc_refresco['body']['content']):
+            if 'table' in el:
+                tabela_el2 = el
+                break
+        if tabela_el2:
+            tabela2     = tabela_el2['table']
+            tbl_start2  = tabela_el2['startIndex']
+            col_ativ    = 2  # coluna ATIVIDADE (índice 2)
+            col_status  = 6  # coluna STATUS (índice 6, apenas sm1)
+            reqs_cor    = []
+            azul        = {'red': 0.07, 'green': 0.36, 'blue': 0.68}
+            CORES_STATUS = {
+                'Realizado':           {'red': 0.0,  'green': 0.39, 'blue': 0.0},
+                'Realizado/Histórico': {'red': 0.0,  'green': 0.55, 'blue': 0.27},
+                'Reagendado':          {'red': 0.85, 'green': 0.33, 'blue': 0.1},
+            }
+            for row_idx_t, (tbl_row, row_data) in enumerate(
+                    zip(tabela2['tableRows'][1:], rows), 1):
+                # Colorir description entre parênteses na col ATIVIDADE
+                if row_data.get('_tem_desc') and col_ativ < len(tbl_row['tableCells']):
+                    cell  = tbl_row['tableCells'][col_ativ]
+                    cnt   = cell.get('content', [])
+                    if cnt:
+                        ativ_txt  = row_data.get('ATIV_DESC', '')
+                        abre_par  = ativ_txt.find('(')
+                        if abre_par >= 0:
+                            # Calcula offset do '(' no texto da célula
+                            s_cell = cnt[0].get('startIndex', 0)
+                            e_cell = cnt[-1].get('endIndex', s_cell)
+                            # Colorir do '(' até o final do texto (parênteses)
+                            par_start = s_cell + abre_par
+                            par_end   = min(e_cell - 1, s_cell + len(ativ_txt))
+                            if par_end > par_start:
+                                reqs_cor.append({'updateTextStyle': {
+                                    'range': {'startIndex': par_start, 'endIndex': par_end},
+                                    'textStyle': {'foregroundColor': {'color': {'rgbColor': azul}}},
+                                    'fields': 'foregroundColor'
+                                }})
+                # Colorir STATUS apenas para tabela sm1
+                if semana_tipo == "sm1" and col_status < len(tbl_row['tableCells']):
+                    cell_s  = tbl_row['tableCells'][col_status]
+                    cnt_s   = cell_s.get('content', [])
+                    status_val = row_data.get('STATUS', '').strip()
+                    cor_s   = CORES_STATUS.get(status_val)
+                    if cnt_s and cor_s:
+                        s_cs = cnt_s[0].get('startIndex', 0)
+                        e_cs = cnt_s[-1].get('endIndex', s_cs)
+                        if e_cs > s_cs:
+                            reqs_cor.append({'updateTextStyle': {
+                                'range': {'startIndex': s_cs, 'endIndex': e_cs - 1},
+                                'textStyle': {
+                                    'foregroundColor': {'color': {'rgbColor': cor_s}},
+                                    'bold': True
+                                },
+                                'fields': 'foregroundColor,bold'
+                            }})
+            if reqs_cor:
+                batch_update_com_retry(docs_service, doc_id, reqs_cor)
+    except Exception as e:
+        print(f"Erro coloração description/status: {e}")
+
 
 def formatar_documento_completo(docs_service, doc_id, rows_sm1, rows_s, rows_s1):
     doc       = docs_service.documents().get(documentId=doc_id).execute()
@@ -1285,6 +1376,67 @@ def formatar_documento_completo(docs_service, doc_id, rows_sm1, rows_s, rows_s1)
     if requests:
         batch_update_com_retry(docs_service, doc_id, requests)
         requests = []
+
+    # --- Título DSI: caixa cinza com borda + negrito ---
+    # --- QTS: centralizado e negrito ---
+    titulo_pattern = re.compile(r'DIRETRIZ SEMANAL DE INSTRUÇÃO \d+', re.IGNORECASE)
+    qts_pattern    = re.compile(r'\(QTS nº', re.IGNORECASE)
+    conf_pattern   = re.compile(r'CONFIRMAR OU REAGENDAR|EXECUTAR OU REAGENDAR|PLANEJAR', re.IGNORECASE)
+    cinza_claro    = {'red': 0.85, 'green': 0.85, 'blue': 0.85}
+    laranja        = {'red': 0.85, 'green': 0.33, 'blue': 0.1}
+
+    doc2    = docs_service.documents().get(documentId=doc_id).execute()
+    cont2   = doc2['body']['content']
+    reqs2   = []
+    for element in cont2:
+        if 'paragraph' not in element:
+            continue
+        para      = element['paragraph']
+        para_els  = para.get('elements', [])
+        full_text = ''.join(pe.get('textRun', {}).get('content', '') for pe in para_els).strip()
+        p_start   = element.get('startIndex', 0)
+        p_end     = element.get('endIndex', 0)
+        if not full_text or p_end <= p_start:
+            continue
+
+        if titulo_pattern.search(full_text):
+            # Centralizar + negrito + fundo cinza
+            reqs2.append({'updateParagraphStyle': {
+                'range': {'startIndex': p_start, 'endIndex': p_end},
+                'paragraphStyle': {'alignment': 'CENTER',
+                    'shading': {'backgroundColor': {'color': {'rgbColor': cinza_claro}}}},
+                'fields': 'alignment,shading'
+            }})
+            reqs2.append({'updateTextStyle': {
+                'range': {'startIndex': p_start, 'endIndex': p_end - 1},
+                'textStyle': {'bold': True},
+                'fields': 'bold'
+            }})
+
+        elif qts_pattern.search(full_text):
+            # Centralizar + negrito
+            reqs2.append({'updateParagraphStyle': {
+                'range': {'startIndex': p_start, 'endIndex': p_end},
+                'paragraphStyle': {'alignment': 'CENTER'},
+                'fields': 'alignment'
+            }})
+            reqs2.append({'updateTextStyle': {
+                'range': {'startIndex': p_start, 'endIndex': p_end - 1},
+                'textStyle': {'bold': True},
+                'fields': 'bold'
+            }})
+
+        elif conf_pattern.search(full_text):
+            # Colorir laranja (CONFIRMAR OU REAGENDAR / EXECUTAR / PLANEJAR)
+            reqs2.append({'updateTextStyle': {
+                'range': {'startIndex': p_start, 'endIndex': p_end - 1},
+                'textStyle': {'foregroundColor': {'color': {'rgbColor': laranja}}, 'bold': True},
+                'fields': 'foregroundColor,bold'
+            }})
+
+    if reqs2:
+        batch_update_com_retry(docs_service, doc_id, reqs2)
+        requests = []  # reset para evitar duplicação
 
     padroes_negrito = [
         r"1\.\s+OPERA[ÇC][ÕO]ES[:\s]?",
@@ -1516,16 +1668,22 @@ try:
     col1, col2 = st.columns(2)
     with col1:
         st.markdown("**2. CURSOS E ESTÁGIOS**")
-        for i, item in enumerate(bullets_cursos or ["-"], 1):
-            st.markdown(f" {i}) {item}")
+        for item in (bullets_cursos or ["-"]):
+            st.markdown(f" {item}")
     with col2:
         st.markdown("**3. DATAS COMEMORATIVAS E FERIADOS**")
         for item in (bullets_datas or ["-"]):
             st.markdown(f" {item}")
 
-    def render_tabela_html(rows, especial_list, table_id="dsi"):
-        cols   = ["DATA", "HORA", "ATIVIDADE", "LOCAL", "UNIF", "AGENDA", "OBS"]
-        widths = {"DATA":"11%","HORA":"5%","ATIVIDADE":"32%","LOCAL":"22%","UNIF":"6%","AGENDA":"6%","OBS":"8%"}
+    def render_tabela_html(rows, especial_list, table_id="dsi", semana_tipo="s"):
+        if semana_tipo == "sm1":
+            cols   = ["DATA", "HORA", "ATIV_DESC", "LOCAL", "UNIF", "AGENDA", "STATUS"]
+            hdrs   = ["DATA", "HORA", "ATIVIDADE", "LOCAL", "UNIF", "AG",     "STATUS"]
+            widths = {"DATA":"10%","HORA":"5%","ATIV_DESC":"30%","LOCAL":"20%","UNIF":"5%","AGENDA":"5%","STATUS":"10%"}
+        else:
+            cols   = ["DATA", "HORA", "ATIV_DESC", "LOCAL", "UNIF", "AGENDA", "OBS"]
+            hdrs   = ["DATA", "HORA", "ATIVIDADE", "LOCAL", "UNIF", "AG",     "OBS"]
+            widths = {"DATA":"11%","HORA":"5%","ATIV_DESC":"33%","LOCAL":"22%","UNIF":"5%","AGENDA":"6%","OBS":"8%"}
         html   = f"""
         <style>
         #{table_id} {{width:100%;border-collapse:collapse;font-size:12px;font-family:Calibri,Arial,sans-serif;}}
@@ -1533,9 +1691,10 @@ try:
         #{table_id} td {{text-align:center;vertical-align:middle;padding:3px 3px;border:1px solid #ccc;line-height:1.2;}}
         #{table_id} tr.alt {{background:#ddd;}} #{table_id} tr.normal {{background:#fff;}}
         #{table_id} tr.especial td {{color:red;background:#fdd;}}
+        .desc-azul {{color:#1258ae;}}
         </style><table id="{table_id}"><thead><tr>"""
-        for c in cols:
-            html += f'<th style="width:{widths[c]}">{c}</th>'
+        for c, h in zip(cols, hdrs):
+            html += f'<th style="width:{widths[c]}">{h}</th>'
         html += "</tr></thead><tbody>"
         alt = True
         for idx, row in enumerate(rows):
@@ -1546,6 +1705,15 @@ try:
             html += f'<tr class="{cls}">'
             for c in cols:
                 val = row.get(c, "") or ""
+                if c == "ATIV_DESC" and row.get("_tem_desc"):
+                    abre = val.find("(")
+                    if abre >= 0:
+                        val = val[:abre] + f'<span class="desc-azul">' + val[abre:] + "</span>"
+                elif c == "STATUS":
+                    cor_map = {"Realizado":"green","Realizado/Histórico":"#0a8a45","Reagendado":"#d95510"}
+                    cor = cor_map.get(val, "")
+                    if cor:
+                        val = f'<strong style="color:{cor}">{val}</strong>'
                 html += f"<td>{val}</td>"
             html += "</tr>"
         html += "</tbody></table>"
@@ -1553,16 +1721,16 @@ try:
 
     st.markdown("**4. INSTRUÇÃO**")
 
-    st.markdown(f"**a. Semana (S-1) - {fmt_periodo_titulo(ini_sm1, fim_sm1)}** *(referência — confirme o que foi executado na seção 8)*")
-    st.markdown(render_tabela_html(rows_sm1, [r.get('_especial', False) for r in rows_sm1], table_id="tabela_sm1"), unsafe_allow_html=True)
+    st.markdown(f"**a. Semana (S-1) - {fmt_periodo_titulo(ini_sm1, fim_sm1)}** — :orange[CONFIRMAR OU REAGENDAR]")
+    st.markdown(render_tabela_html(rows_sm1, [r.get('_especial', False) for r in rows_sm1], table_id="tabela_sm1", semana_tipo="sm1"), unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
 
-    st.markdown(f"**b. Semana (S) - {fmt_periodo_titulo(ini_s, fim_s)}**")
-    st.markdown(render_tabela_html(rows_s,  [r.get('_especial', False) for r in rows_s],  table_id="tabela_s"),  unsafe_allow_html=True)
+    st.markdown(f"**b. Semana (S) - {fmt_periodo_titulo(ini_s, fim_s)}** — :orange[EXECUTAR OU REAGENDAR]")
+    st.markdown(render_tabela_html(rows_s,  [r.get('_especial', False) for r in rows_s],  table_id="tabela_s",  semana_tipo="s"),  unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
 
-    st.markdown(f"**c. Semana (S+1) - {fmt_periodo_titulo(ini_s1, fim_s1)}**")
-    st.markdown(render_tabela_html(rows_s1, [r.get('_especial', False) for r in rows_s1], table_id="tabela_s1"), unsafe_allow_html=True)
+    st.markdown(f"**c. Semana (S+1) - {fmt_periodo_titulo(ini_s1, fim_s1)}** — :orange[PLANEJAR]")
+    st.markdown(render_tabela_html(rows_s1, [r.get('_especial', False) for r in rows_s1], table_id="tabela_s1", semana_tipo="s1"), unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
 
     with st.expander("5. FORMATURA GERAL", expanded=False):
@@ -1593,7 +1761,7 @@ try:
                 if linha.strip():
                     st.markdown(f"{i}. {linha.strip()}")
 
-    with st.expander("8. ATIVIDADES PLANEJADAS E NÃO EXECUTADAS", expanded=False):
+    with st.expander("8. ATIVIDADES PLANEJADAS E NÃO EXECUTADAS", exposed=False):
         st.caption("Digite uma atividade por linha — a numeração será automática")
         ativ_nao_exec_raw = st.text_area("Atividades não executadas:",
                                           placeholder="Ex:\nReu componentes ASA",
