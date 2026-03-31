@@ -829,7 +829,7 @@ def construir_tabela_semana(service, d_ini, d_fim, incluir_cmt, incluir_pgi, fer
                 "DATA":      fmt_data_coluna(cur),
                 "HORA":      "", "ATIVIDADE": "", "ATIV_DESC": "",
                 "LOCAL":     "", "UNIF":      "", "AGENDA":    "",
-                "OBS":       "", "STATUS":    "",
+                "OBS":       "", "STATUS":    "☐ Realizado\n☐ Histórico\n☐ Reagendado",
                 "_especial": eh_especial, "_tem_desc": False,
             })
         else:
@@ -860,7 +860,7 @@ def construir_tabela_semana(service, d_ini, d_fim, incluir_cmt, incluir_pgi, fer
                     "UNIF":        "",
                     "AGENDA":      resp,
                     "OBS":         "",
-                    "STATUS":      "",
+                    "STATUS":      "☐ Realizado\n☐ Histórico\n☐ Reagendado",
                     "_especial":   eh_especial if i == 0 else False,
                     "_tem_desc":   bool(descricao),
                 })
@@ -1327,24 +1327,32 @@ def aplicar_formatacao_tabela(docs_service, doc_id, rows, grupos_data, semana_ti
                                     'textStyle': {'foregroundColor': {'color': {'rgbColor': azul}}},
                                     'fields': 'foregroundColor'
                                 }})
-                # Colorir STATUS apenas para tabela sm1
+                # Colorir STATUS (3 linhas) apenas para tabela sm1
                 if semana_tipo == "sm1" and col_status < len(tbl_row['tableCells']):
-                    cell_s  = tbl_row['tableCells'][col_status]
-                    cnt_s   = cell_s.get('content', [])
-                    status_val = row_data.get('STATUS', '').strip()
-                    cor_s   = CORES_STATUS.get(status_val)
-                    if cnt_s and cor_s:
-                        s_cs = cnt_s[0].get('startIndex', 0)
-                        e_cs = cnt_s[-1].get('endIndex', s_cs)
-                        if e_cs > s_cs:
-                            reqs_cor.append({'updateTextStyle': {
-                                'range': {'startIndex': s_cs, 'endIndex': e_cs - 1},
-                                'textStyle': {
-                                    'foregroundColor': {'color': {'rgbColor': cor_s}},
-                                    'bold': True
-                                },
-                                'fields': 'foregroundColor,bold'
-                            }})
+                    cell_s = tbl_row['tableCells'][col_status]
+                    cnt_s  = cell_s.get('content', [])
+                    # Cada parágrafo da célula = uma linha do STATUS
+                    COR_STATUS_LINES = [
+                        {'red': 0.07, 'green': 0.36, 'blue': 0.68},   # Realizado — azul
+                        {'red': 0.0,  'green': 0.50, 'blue': 0.13},   # Histórico — verde
+                        {'red': 0.78, 'green': 0.08, 'blue': 0.08},   # Reagendado — vermelho
+                    ]
+                    for par_idx, paragrafo in enumerate(cnt_s):
+                        if par_idx >= len(COR_STATUS_LINES):
+                            break
+                        p_start = paragrafo.get('startIndex')
+                        p_end   = paragrafo.get('endIndex')
+                        if p_start is None or p_end is None or p_end <= p_start + 1:
+                            continue
+                        cor_linha = COR_STATUS_LINES[par_idx]
+                        reqs_cor.append({'updateTextStyle': {
+                            'range': {'startIndex': p_start, 'endIndex': p_end - 1},
+                            'textStyle': {
+                                'foregroundColor': {'color': {'rgbColor': cor_linha}},
+                                'fontSize': {'magnitude': 10, 'unit': 'PT'},
+                            },
+                            'fields': 'foregroundColor,fontSize'
+                        }})
             if reqs_cor:
                 batch_update_com_retry(docs_service, doc_id, reqs_cor)
     except Exception as e:
@@ -1710,10 +1718,13 @@ try:
                     if abre >= 0:
                         val = val[:abre] + f'<span class="desc-azul">' + val[abre:] + "</span>"
                 elif c == "STATUS":
-                    cor_map = {"Realizado":"green","Realizado/Histórico":"#0a8a45","Reagendado":"#d95510"}
-                    cor = cor_map.get(val, "")
-                    if cor:
-                        val = f'<strong style="color:{cor}">{val}</strong>'
+                    if val:
+                        linhas_s = val.split("\n")
+                        cores_s  = ["#1258ae", "#008021", "#c71414"]
+                        val = "<br>".join(
+                            f'<span style="color:{c};font-size:10px">{l}</span>'
+                            for l, c in zip(linhas_s, cores_s)
+                        )
                 html += f"<td>{val}</td>"
             html += "</tr>"
         html += "</tbody></table>"
