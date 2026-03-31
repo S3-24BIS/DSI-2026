@@ -1285,10 +1285,16 @@ def aplicar_formatacao_tabela(docs_service, doc_id, rows, grupos_data, semana_ti
             for col_idx, cell in enumerate(row_cells):
                 cell_content = cell.get('content', [])
                 if cell_content:
-                    requests.append({'updateParagraphStyle': {
-                        'paragraphStyle': {'alignment': 'CENTER'}, 'fields': 'alignment',
-                        'range': {'startIndex': cell_content[0]['startIndex'], 'endIndex': cell_content[0]['endIndex'] - 1}
-                    }})
+                    # Centralizar TODOS os parágrafos da célula
+                    for para in cell_content:
+                        p_s = para.get('startIndex')
+                        p_e = para.get('endIndex')
+                        if p_s is not None and p_e is not None and p_e > p_s + 1:
+                            requests.append({'updateParagraphStyle': {
+                                'paragraphStyle': {'alignment': 'CENTER'},
+                                'fields': 'alignment',
+                                'range': {'startIndex': p_s, 'endIndex': p_e - 1}
+                            }})
                     requests.append({'updateTableCellStyle': {
                         'tableRange': {'tableCellLocation': {'tableStartLocation': {'index': table_start}, 'rowIndex': row_idx, 'columnIndex': col_idx}, 'rowSpan': 1, 'columnSpan': 1},
                         'tableCellStyle': {'contentAlignment': 'MIDDLE', 'paddingTop': {'magnitude': 2, 'unit': 'PT'}, 'paddingBottom': {'magnitude': 2, 'unit': 'PT'}, 'paddingLeft': {'magnitude': 3, 'unit': 'PT'}, 'paddingRight': {'magnitude': 3, 'unit': 'PT'}},
@@ -1599,8 +1605,11 @@ def formatar_documento_completo(docs_service, doc_id, rows_sm1, rows_s, rows_s1,
         if color_end > color_start:
             reqs3.append({'updateTextStyle': {
                 'range': {'startIndex': color_start, 'endIndex': color_end},
-                'textStyle': {'foregroundColor': {'color': {'rgbColor': azul_rgb}}},
-                'fields': 'foregroundColor'
+                'textStyle': {
+                    'foregroundColor': {'color': {'rgbColor': azul_rgb}},
+                    'bold': True,
+                },
+                'fields': 'foregroundColor,bold'
             }})
 
     if reqs3:
