@@ -718,7 +718,7 @@ def buscar_atividades_futuras(service, fim_s1: datetime.date) -> list:
     unicos.sort(key=lambda x: x["s_date"])
 
     linhas = []
-    for i, ev in enumerate(unicos, 1):
+    for ev in unicos:
         s_date  = ev["s_date"]
         e_date  = ev["e_date"]
         summary = ev["summary"]
@@ -1514,8 +1514,7 @@ def formatar_documento_completo(docs_service, doc_id, rows_sm1, rows_s, rows_s1,
         r"4\.\s+INSTRU[ÇC][ÃA]O",
         r"5\.\s+FORMATURA GERAL",
         r"6\.\s+ATIVIDADES FUTURAS",
-        r"7\.\s+SU\b",
-        r"8\.\s+ATIVIDADES PLANEJADAS",
+
     ]
 
     for element in content:
@@ -1553,7 +1552,6 @@ def formatar_documento_completo(docs_service, doc_id, rows_sm1, rows_s, rows_s1,
     SEC_CURSOS  = re.compile(r'^2\.\s+CURSOS', re.IGNORECASE)
     SEC_DATAS   = re.compile(r'^3\.\s+DATAS', re.IGNORECASE)
     SEC_FUTURAS = re.compile(r'^6\.\s+ATIVIDADES FUTURAS', re.IGNORECASE)
-    SEC_SU      = re.compile(r'^7\.\s+SU\b', re.IGNORECASE)
 
     doc3  = docs_service.documents().get(documentId=doc_id).execute()
     cont3 = doc3['body']['content']
@@ -1585,9 +1583,7 @@ def formatar_documento_completo(docs_service, doc_id, rows_sm1, rows_s, rows_s1,
             dentro_futuras = True
             dentro_cursos  = False
             continue
-        if SEC_SU.search(full3):
-            dentro_futuras = False
-            continue
+
 
         if not (dentro_cursos or dentro_futuras):
             continue
@@ -1896,27 +1892,7 @@ try:
         else:
             st.info("Nenhuma atividade encontrada no período.")
 
-    with st.expander("7. SU", expanded=False):
-        st.caption("Digite um item por linha — a numeração será automática")
-        su_raw = st.text_area("SU:", placeholder="Ex:\nS/A\nS/A", height=120,
-                              key="su_texto", label_visibility="collapsed")
-        if su_raw.strip():
-            st.markdown("**Preview:**")
-            for i, linha in enumerate(su_raw.strip().split("\n"), 1):
-                if linha.strip():
-                    st.markdown(f"{i}. {linha.strip()}")
 
-    with st.expander("8. ATIVIDADES PLANEJADAS E NÃO EXECUTADAS", exposed=False):
-        st.caption("Digite uma atividade por linha — a numeração será automática")
-        ativ_nao_exec_raw = st.text_area("Atividades não executadas:",
-                                          placeholder="Ex:\nReu componentes ASA",
-                                          height=150, key="ativ_nao_exec",
-                                          label_visibility="collapsed")
-        if ativ_nao_exec_raw.strip():
-            st.markdown("**Preview:**")
-            for i, linha in enumerate(ativ_nao_exec_raw.strip().split("\n"), 1):
-                if linha.strip():
-                    st.markdown(f"{i}. {linha.strip()}")
 
 except Exception as e:
     st.error(f"❌ Erro no sistema: {e}")
