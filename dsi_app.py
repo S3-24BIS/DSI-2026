@@ -1211,9 +1211,7 @@ def inserir_e_preencher_tabela(docs_service, doc_id, rows, insert_index, semana_
                 if insert_at <= 0:
                     continue
                 # Inserir "\n☐ Reagendado\n☐ Histórico" de trás pra frente
-                # Ordem reversa: primeiro Reagendado, depois Histórico
-                # pois inserimos antes do 
- final da célula
+                # Ordem reversa: primeiro Reagendado, depois Histórico antes do final da célula
                 reqs_status.append({'insertText': {
                     'location': {'index': insert_at},
                     'text': "\n☐ Reagendado\n☐ Histórico"
