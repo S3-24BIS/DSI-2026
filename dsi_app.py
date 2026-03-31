@@ -860,7 +860,7 @@ def construir_tabela_semana(service, d_ini, d_fim, incluir_cmt, incluir_pgi, fer
                     "UNIF":        "",
                     "AGENDA":      resp,
                     "OBS":         "",
-                    "STATUS":      "Realizado\nHistórico\nReagendado",
+                    "STATUS":      "☐ Realizado\n☐ Histórico\n☐ Reagendado",
                     "_especial":   eh_especial if i == 0 else False,
                     "_tem_desc":   bool(descricao),
                 })
@@ -957,10 +957,8 @@ def criar_google_doc(creds, titulo_doc, num_fmt, ref_date,
 
     periodo_s1 = fmt_periodo_titulo(ini_s1, fim_s1)
     conteudo.append(f"DIRETRIZ SEMANAL DE INSTRUÇÃO {num_fmt} ({periodo_s1})")
-    conteudo.append("")
     conteudo.append(f"(QTS nº {num_fmt} - SI: {si} - FASE: {fase})")
     conteudo.append("")
-
     conteudo.append("1. OPERAÇÕES:")
     for linha in (operacoes_linhas or ["-"]):
         conteudo.append(linha)
@@ -987,7 +985,6 @@ def criar_google_doc(creds, titulo_doc, num_fmt, ref_date,
     conteudo.append("")
     conteudo.append(f" a. Semana (S-1) - {fmt_periodo_titulo(ini_sm1, fim_sm1)} - CONFIRMAR OU REAGENDAR")
     conteudo.append(" (Realizado - Realizado/Histórico - Reagendado)")
-    conteudo.append("")
 
     texto_completo = "\n".join(conteudo)
 
@@ -1279,30 +1276,41 @@ def aplicar_formatacao_tabela(docs_service, doc_id, rows, grupos_data, semana_ti
         if not eh_dia_especial:
             cor_alternada = not cor_alternada
 
-    for row_idx in range(len(rows) + 1):
-        if row_idx < len(tabela.get('tableRows', [])):
-            row_cells = tabela['tableRows'][row_idx].get('tableCells', [])
-            for col_idx, cell in enumerate(row_cells):
-                cell_content = cell.get('content', [])
-                if cell_content:
-                    # Centralizar TODOS os parágrafos da célula
-                    for para in cell_content:
-                        p_s = para.get('startIndex')
-                        p_e = para.get('endIndex')
-                        if p_s is not None and p_e is not None and p_e > p_s + 1:
-                            requests.append({'updateParagraphStyle': {
-                                'paragraphStyle': {'alignment': 'CENTER'},
-                                'fields': 'alignment',
-                                'range': {'startIndex': p_s, 'endIndex': p_e - 1}
-                            }})
-                    requests.append({'updateTableCellStyle': {
-                        'tableRange': {'tableCellLocation': {'tableStartLocation': {'index': table_start}, 'rowIndex': row_idx, 'columnIndex': col_idx}, 'rowSpan': 1, 'columnSpan': 1},
-                        'tableCellStyle': {'contentAlignment': 'MIDDLE', 'paddingTop': {'magnitude': 2, 'unit': 'PT'}, 'paddingBottom': {'magnitude': 2, 'unit': 'PT'}, 'paddingLeft': {'magnitude': 3, 'unit': 'PT'}, 'paddingRight': {'magnitude': 3, 'unit': 'PT'}},
-                        'fields': 'contentAlignment,paddingTop,paddingBottom,paddingLeft,paddingRight'
-                    }})
+    # Aplicar contentAlignment MIDDLE + padding via tableRange (não depende de startIndex)
+    for row_idx in range(len(tabela.get('tableRows', []))):
+        for col_idx in range(n_cols_tab):
+            requests.append({'updateTableCellStyle': {
+                'tableRange': {'tableCellLocation': {'tableStartLocation': {'index': table_start}, 'rowIndex': row_idx, 'columnIndex': col_idx}, 'rowSpan': 1, 'columnSpan': 1},
+                'tableCellStyle': {'contentAlignment': 'MIDDLE', 'paddingTop': {'magnitude': 2, 'unit': 'PT'}, 'paddingBottom': {'magnitude': 2, 'unit': 'PT'}, 'paddingLeft': {'magnitude': 3, 'unit': 'PT'}, 'paddingRight': {'magnitude': 3, 'unit': 'PT'}},
+                'fields': 'contentAlignment,paddingTop,paddingBottom,paddingLeft,paddingRight'
+            }})
 
     if requests:
         batch_update_com_retry(docs_service, doc_id, requests)
+
+    # Recarregar doc DEPOIS de inserir o texto para ter startIndex corretos
+    time.sleep(1)
+    doc_recarregado = docs_service.documents().get(documentId=doc_id).execute()
+    tabela_atualizada = None
+    for el in reversed(doc_recarregado['body']['content']):
+        if 'table' in el:
+            tabela_atualizada = el
+            break
+    if tabela_atualizada:
+        reqs_center = []
+        for row in tabela_atualizada['table']['tableRows']:
+            for cell in row.get('tableCells', []):
+                for para in cell.get('content', []):
+                    p_s = para.get('startIndex')
+                    p_e = para.get('endIndex')
+                    if p_s is not None and p_e is not None and p_e > p_s + 1:
+                        reqs_center.append({'updateParagraphStyle': {
+                            'paragraphStyle': {'alignment': 'CENTER'},
+                            'fields': 'alignment',
+                            'range': {'startIndex': p_s, 'endIndex': p_e - 1}
+                        }})
+        if reqs_center:
+            batch_update_com_retry(docs_service, doc_id, reqs_center)
 
     time.sleep(0.5)
     doc = docs_service.documents().get(documentId=doc_id).execute()
@@ -1442,6 +1450,12 @@ def formatar_documento_completo(docs_service, doc_id, rows_sm1, rows_s, rows_s1,
         r'Batalhão de Caçadores|BATALHÃO BARÃO DE CAXIAS',
         re.IGNORECASE
     )
+    # Pattern para as linhas do cabeçalho superior (DSI Nº, data, Visto S3, traço, Cap PIERROTI)
+    cabecalho_dsi_pattern = re.compile(
+        r'^DSI Nº|^Visto S3|^Cap PIERROTI|^_+$',
+        re.IGNORECASE
+    )
+    data_dsi_pattern = re.compile(r'^\d{1,2} [A-Z]{3} \d{2}$')
     qts_pattern    = re.compile(r'\(QTS nº', re.IGNORECASE)
     conf_pattern   = re.compile(r'CONFIRMAR OU REAGENDAR|EXECUTAR OU REAGENDAR|PLANEJAR', re.IGNORECASE)
     cinza_claro    = {'red': 0.85, 'green': 0.85, 'blue': 0.85}
@@ -1459,6 +1473,27 @@ def formatar_documento_completo(docs_service, doc_id, rows_sm1, rows_s, rows_s1,
         p_start   = element.get('startIndex', 0)
         p_end     = element.get('endIndex', 0)
         if not full_text or p_end <= p_start:
+            continue
+
+        # Cabeçalho superior: DSI Nº, data, Visto S3, traço, Cap PIERROTI → negrito preto, sem espaço
+        if cabecalho_dsi_pattern.search(full_text) or data_dsi_pattern.search(full_text):
+            reqs2.append({'updateTextStyle': {
+                'range': {'startIndex': p_start, 'endIndex': p_end - 1},
+                'textStyle': {
+                    'bold': True,
+                    'foregroundColor': {'color': {'rgbColor': {'red': 0.0, 'green': 0.0, 'blue': 0.0}}},
+                },
+                'fields': 'bold,foregroundColor'
+            }})
+            reqs2.append({'updateParagraphStyle': {
+                'range': {'startIndex': p_start, 'endIndex': p_end},
+                'paragraphStyle': {
+                    'spaceAbove': {'magnitude': 0, 'unit': 'PT'},
+                    'spaceBelow': {'magnitude': 0, 'unit': 'PT'},
+                    'lineSpacing': 100,
+                },
+                'fields': 'spaceAbove,spaceBelow,lineSpacing'
+            }})
             continue
 
         if cabecalho_pattern.search(full_text):
