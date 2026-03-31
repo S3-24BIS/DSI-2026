@@ -732,7 +732,7 @@ def buscar_atividades_futuras(service, fim_s1: datetime.date) -> list:
         else:
             data_exib = dia_fmt
 
-        linhas.append(f" {i}) {data_exib} - {summary}")
+        linhas.append(f" {data_exib} - {summary}")
 
     return linhas
 
@@ -829,7 +829,7 @@ def construir_tabela_semana(service, d_ini, d_fim, incluir_cmt, incluir_pgi, fer
                 "DATA":      fmt_data_coluna(cur),
                 "HORA":      "", "ATIVIDADE": "", "ATIV_DESC": "",
                 "LOCAL":     "", "UNIF":      "", "AGENDA":    "",
-                "OBS":       "", "STATUS":    "☐ Realizado\n☐ Histórico\n☐ Reagendado",
+                "OBS":       "", "STATUS":    "Realizado\nHistórico\nReagendado",
                 "_especial": eh_especial, "_tem_desc": False,
             })
         else:
@@ -847,7 +847,7 @@ def construir_tabela_semana(service, d_ini, d_fim, incluir_cmt, incluir_pgi, fer
                 # Description em azul entre parênteses — apenas primeira linha
                 if descricao:
                     primeira_linha_desc = descricao.split("  ")[0].split("\n")[0].strip()[:120]
-                    atividade_exib = f"{atividade} ({primeira_linha_desc})"
+                    atividade_exib = f"{atividade}\n({primeira_linha_desc})"
                 else:
                     atividade_exib = atividade
 
@@ -860,7 +860,7 @@ def construir_tabela_semana(service, d_ini, d_fim, incluir_cmt, incluir_pgi, fer
                     "UNIF":        "",
                     "AGENDA":      resp,
                     "OBS":         "",
-                    "STATUS":      "☐ Realizado\n☐ Histórico\n☐ Reagendado",
+                    "STATUS":      "Realizado\nHistórico\nReagendado",
                     "_especial":   eh_especial if i == 0 else False,
                     "_tem_desc":   bool(descricao),
                 })
@@ -1077,7 +1077,7 @@ def criar_google_doc(creds, titulo_doc, num_fmt, ref_date,
 
     # --- Formatação global ---
     time.sleep(3)
-    formatar_documento_completo(docs_service, doc_id, rows_sm1, rows_s, rows_s1)
+    formatar_documento_completo(docs_service, doc_id, rows_sm1, rows_s, rows_s1, bullets_cursos=bullets_cursos, ativ_futuras_linhas=ativ_futuras_linhas)
     return doc_id
 
 # =========================================================
@@ -1214,7 +1214,7 @@ def inserir_e_preencher_tabela(docs_service, doc_id, rows, insert_index, semana_
                 # Ordem reversa: primeiro Reagendado, depois Histórico antes do final da célula
                 reqs_status.append({'insertText': {
                     'location': {'index': insert_at},
-                    'text': "\n☐ Reagendado\n☐ Histórico"
+                    'text': "\nReagendado\nHistórico"
                 }})
             if reqs_status:
                 batch_update_com_retry(docs_service, doc_id, reqs_status)
@@ -1350,26 +1350,24 @@ def aplicar_formatacao_tabela(docs_service, doc_id, rows, grupos_data, semana_ti
             }
             for row_idx_t, (tbl_row, row_data) in enumerate(
                     zip(tabela2['tableRows'][1:], rows), 1):
-                # Colorir description entre parênteses na col ATIVIDADE
+                # Colorir description (2º parágrafo da célula ATIVIDADE) em azul negrito
                 if row_data.get('_tem_desc') and col_ativ < len(tbl_row['tableCells']):
                     cell  = tbl_row['tableCells'][col_ativ]
                     cnt   = cell.get('content', [])
-                    if cnt:
-                        ativ_txt  = row_data.get('ATIV_DESC', '')
-                        abre_par  = ativ_txt.find('(')
-                        if abre_par >= 0:
-                            # Calcula offset do '(' no texto da célula
-                            s_cell = cnt[0].get('startIndex', 0)
-                            e_cell = cnt[-1].get('endIndex', s_cell)
-                            # Colorir do '(' até o final do texto (parênteses)
-                            par_start = s_cell + abre_par
-                            par_end   = min(e_cell - 1, s_cell + len(ativ_txt))
-                            if par_end > par_start:
-                                reqs_cor.append({'updateTextStyle': {
-                                    'range': {'startIndex': par_start, 'endIndex': par_end},
-                                    'textStyle': {'foregroundColor': {'color': {'rgbColor': azul}}},
-                                    'fields': 'foregroundColor'
-                                }})
+                    # barra-n cria 2 parágrafos na célula: [0]=atividade, [1]=(description)
+                    if len(cnt) >= 2:
+                        para_desc = cnt[1]
+                        d_start   = para_desc.get('startIndex')
+                        d_end     = para_desc.get('endIndex')
+                        if d_start is not None and d_end is not None and d_end > d_start + 1:
+                            reqs_cor.append({'updateTextStyle': {
+                                'range': {'startIndex': d_start, 'endIndex': d_end - 1},
+                                'textStyle': {
+                                    'foregroundColor': {'color': {'rgbColor': azul}},
+                                    'bold': True,
+                                },
+                                'fields': 'foregroundColor,bold'
+                            }})
                 # Colorir STATUS (3 parágrafos) apenas para tabela sm1
                 # Ordem de inserção foi: ☐ Realizado / ☐ Histórico / ☐ Reagendado
                 if semana_tipo == "sm1" and col_status < len(tbl_row['tableCells']):
@@ -1404,7 +1402,7 @@ def aplicar_formatacao_tabela(docs_service, doc_id, rows, grupos_data, semana_ti
         print(f"Erro coloração description/status: {e}")
 
 
-def formatar_documento_completo(docs_service, doc_id, rows_sm1, rows_s, rows_s1):
+def formatar_documento_completo(docs_service, doc_id, rows_sm1, rows_s, rows_s1, bullets_cursos=None, ativ_futuras_linhas=None):
     doc       = docs_service.documents().get(documentId=doc_id).execute()
     content   = doc['body']['content']
     end_index = content[-1]['endIndex']
@@ -1432,7 +1430,12 @@ def formatar_documento_completo(docs_service, doc_id, rows_sm1, rows_s, rows_s1)
 
     # --- Título DSI: caixa cinza com borda + negrito ---
     # --- QTS: centralizado e negrito ---
-    titulo_pattern = re.compile(r'DIRETRIZ SEMANAL DE INSTRUÇÃO \d+', re.IGNORECASE)
+    titulo_pattern   = re.compile(r'DIRETRIZ SEMANAL DE INSTRUÇÃO \d+', re.IGNORECASE)
+    cabecalho_pattern = re.compile(
+        r'MINISTÉRIO DA DEFESA|EXÉRCITO BRASILEIRO|BATALHÃO DE INFANTARIA|'
+        r'Batalhão de Caçadores|BATALHÃO BARÃO DE CAXIAS',
+        re.IGNORECASE
+    )
     qts_pattern    = re.compile(r'\(QTS nº', re.IGNORECASE)
     conf_pattern   = re.compile(r'CONFIRMAR OU REAGENDAR|EXECUTAR OU REAGENDAR|PLANEJAR', re.IGNORECASE)
     cinza_claro    = {'red': 0.85, 'green': 0.85, 'blue': 0.85}
@@ -1452,6 +1455,15 @@ def formatar_documento_completo(docs_service, doc_id, rows_sm1, rows_s, rows_s1)
         if not full_text or p_end <= p_start:
             continue
 
+        if cabecalho_pattern.search(full_text):
+            # Centralizar linhas do cabeçalho do batalhão — if independente (não elif)
+            reqs2.append({'updateParagraphStyle': {
+                'range': {'startIndex': p_start, 'endIndex': p_end},
+                'paragraphStyle': {'alignment': 'CENTER'},
+                'fields': 'alignment'
+            }})
+            continue
+
         if titulo_pattern.search(full_text):
             # Centralizar + negrito + fundo cinza
             reqs2.append({'updateParagraphStyle': {
@@ -1467,7 +1479,8 @@ def formatar_documento_completo(docs_service, doc_id, rows_sm1, rows_s, rows_s1)
             }})
 
         elif qts_pattern.search(full_text):
-            # Centralizar + negrito
+            # Centralizar + negrito + azul
+            azul_qts = {'red': 0.07, 'green': 0.36, 'blue': 0.68}
             reqs2.append({'updateParagraphStyle': {
                 'range': {'startIndex': p_start, 'endIndex': p_end},
                 'paragraphStyle': {'alignment': 'CENTER'},
@@ -1475,8 +1488,11 @@ def formatar_documento_completo(docs_service, doc_id, rows_sm1, rows_s, rows_s1)
             }})
             reqs2.append({'updateTextStyle': {
                 'range': {'startIndex': p_start, 'endIndex': p_end - 1},
-                'textStyle': {'bold': True},
-                'fields': 'bold'
+                'textStyle': {
+                    'bold': True,
+                    'foregroundColor': {'color': {'rgbColor': azul_qts}},
+                },
+                'fields': 'bold,foregroundColor'
             }})
 
         elif conf_pattern.search(full_text):
@@ -1528,6 +1544,74 @@ def formatar_documento_completo(docs_service, doc_id, rows_sm1, rows_s, rows_s1)
 
     if requests:
         batch_update_com_retry(docs_service, doc_id, requests)
+
+    # --- Colorir cursos (após primeiro " - ") e atividades futuras (após " - ") em azul ---
+    azul_rgb = {'red': 0.07, 'green': 0.36, 'blue': 0.68}
+
+    # Colorir texto após " - " nos itens das seções 2 (Cursos) e 6 (Ativ Futuras)
+    # Abordagem: varrer doc por seção, sem depender de matching por texto
+    SEC_CURSOS  = re.compile(r'^2\.\s+CURSOS', re.IGNORECASE)
+    SEC_DATAS   = re.compile(r'^3\.\s+DATAS', re.IGNORECASE)
+    SEC_FUTURAS = re.compile(r'^6\.\s+ATIVIDADES FUTURAS', re.IGNORECASE)
+    SEC_SU      = re.compile(r'^7\.\s+SU\b', re.IGNORECASE)
+
+    doc3  = docs_service.documents().get(documentId=doc_id).execute()
+    cont3 = doc3['body']['content']
+    reqs3 = []
+
+    dentro_cursos  = False
+    dentro_futuras = False
+
+    for element in cont3:
+        if 'paragraph' not in element:
+            dentro_cursos  = False
+            dentro_futuras = False
+            continue
+        para_els3 = element['paragraph'].get('elements', [])
+        raw_txt   = ''.join(pe.get('textRun', {}).get('content', '') for pe in para_els3)
+        full3     = raw_txt.strip()
+        p_start3  = element.get('startIndex', 0)
+        p_end3    = element.get('endIndex', 0)
+
+        # Detectar entrada/saída de seções
+        if SEC_CURSOS.search(full3):
+            dentro_cursos  = True
+            dentro_futuras = False
+            continue
+        if SEC_DATAS.search(full3):
+            dentro_cursos  = False
+            continue
+        if SEC_FUTURAS.search(full3):
+            dentro_futuras = True
+            dentro_cursos  = False
+            continue
+        if SEC_SU.search(full3):
+            dentro_futuras = False
+            continue
+
+        if not (dentro_cursos or dentro_futuras):
+            continue
+        if not full3 or ' - ' not in raw_txt:
+            continue
+
+        # Colorir após o primeiro " - "
+        abs_sep = raw_txt.find(' - ')
+        if abs_sep < 0:
+            continue
+        color_start = p_start3 + abs_sep + 3
+        color_end   = p_end3 - 1
+        if color_end > color_start:
+            reqs3.append({'updateTextStyle': {
+                'range': {'startIndex': color_start, 'endIndex': color_end},
+                'textStyle': {'foregroundColor': {'color': {'rgbColor': azul_rgb}}},
+                'fields': 'foregroundColor'
+            }})
+
+    if reqs3:
+        try:
+            batch_update_com_retry(docs_service, doc_id, reqs3)
+        except Exception as e:
+            print(f"Erro colorir cursos/futuras: {e}")
 
 
 def criar_google_doc_safe(creds, *args, **kwargs):
@@ -1759,9 +1843,14 @@ try:
             for c in cols:
                 val = row.get(c, "") or ""
                 if c == "ATIV_DESC" and row.get("_tem_desc"):
-                    abre = val.find("(")
-                    if abre >= 0:
-                        val = val[:abre] + f'<span class="desc-azul">' + val[abre:] + "</span>"
+                    # description está na segunda linha (separada por \n)
+                    partes = val.split("\n", 1)
+                    if len(partes) == 2:
+                        val = partes[0] + f'<br><span class="desc-azul">' + partes[1] + "</span>"
+                    else:
+                        abre = val.find("(")
+                        if abre >= 0:
+                            val = val[:abre] + f'<span class="desc-azul">' + val[abre:] + "</span>"
                 elif c == "STATUS":
                     if val:
                         linhas_s = val.split("\n")
