@@ -1085,7 +1085,7 @@ def criar_google_doc(creds, titulo_doc, num_fmt, ref_date,
 # =========================================================
 
 def inserir_e_preencher_tabela(docs_service, doc_id, rows, insert_index, semana_tipo="s"):
-    num_cols = 8 if semana_tipo == "sm1" else 7
+    num_cols = 6 if semana_tipo == "sm1" else 7
     batch_update_com_retry(docs_service, doc_id, [
         {'insertTable': {'rows': len(rows) + 1, 'columns': num_cols, 'location': {'index': insert_index}}}
     ])
@@ -1104,7 +1104,7 @@ def inserir_e_preencher_tabela(docs_service, doc_id, rows, insert_index, semana_
         return
 
     if semana_tipo == "sm1":
-        larguras_pt = [75, 35, 155, 100, 28, 28, 55]   # 8 cols: +STATUS
+        larguras_pt = [80, 38, 190, 120, 35, 65]   # 6 cols: DATA HORA ATIV LOCAL AG STATUS
     else:
         larguras_pt = [95, 38, 185, 125, 28, 28, 28]   # 7 cols
 
@@ -1138,8 +1138,8 @@ def inserir_e_preencher_tabela(docs_service, doc_id, rows, insert_index, semana_
 
     all_requests = []
     if semana_tipo == "sm1":
-        cols    = ["DATA", "HORA", "ATIV_DESC", "LOCAL", "UNIF", "AGENDA", "STATUS"]
-        headers = ["DATA", "HORA", "ATIVIDADE", "LOCAL", "UNIF", "AG",     "STATUS"]
+        cols    = ["DATA", "HORA", "ATIV_DESC", "LOCAL", "AGENDA", "STATUS"]
+        headers = ["DATA", "HORA", "ATIVIDADE", "LOCAL", "AG",     "STATUS"]
     else:
         cols    = ["DATA", "HORA", "ATIV_DESC", "LOCAL", "UNIF", "AGENDA", "OBS"]
         headers = ["DATA", "HORA", "ATIVIDADE", "LOCAL", "UNIF", "AG",     "OBS"]
@@ -1160,7 +1160,13 @@ def inserir_e_preencher_tabela(docs_service, doc_id, rows, insert_index, semana_
                         valor = row_data.get(cols[col_idx], "")
                         texto = "" if (pd.isna(valor) if isinstance(valor, float) else (valor is None or str(valor).strip() == '')) else str(valor).strip()
                         if texto:
-                            all_requests.append({'insertText': {'location': {'index': start_idx}, 'text': texto}})
+                            # STATUS: inserir só a primeira linha aqui;
+                            # as outras linhas são inseridas depois via parágrafos
+                            if cols[col_idx] == "STATUS":
+                                primeira = texto.split("\n")[0]
+                                all_requests.append({'insertText': {'location': {'index': start_idx}, 'text': primeira}})
+                            else:
+                                all_requests.append({'insertText': {'location': {'index': start_idx}, 'text': texto}})
 
     primeira_linha = tabela['tableRows'][0]
     for i in range(n_cols - 1, -1, -1):
@@ -1176,6 +1182,44 @@ def inserir_e_preencher_tabela(docs_service, doc_id, rows, insert_index, semana_
             batch_update_com_retry(docs_service, doc_id, all_requests)
         except Exception as e:
             print(f"Erro preencher tabela: {e}")
+
+    # --- Inserir linhas 2 e 3 do STATUS como parágrafos separados ---
+    if semana_tipo == "sm1":
+        time.sleep(1)
+        doc_status = docs_service.documents().get(documentId=doc_id).execute()
+        tabela_st  = None
+        for el in reversed(doc_status['body']['content']):
+            if 'table' in el:
+                tabela_st = el['table']
+                break
+        if tabela_st:
+            col_status_idx = cols.index("STATUS")
+            reqs_status = []
+            # Percorre de trás para frente para não deslocar índices
+            for row_idx in range(len(rows) - 1, -1, -1):
+                if row_idx + 1 >= len(tabela_st['tableRows']):
+                    continue
+                tbl_row = tabela_st['tableRows'][row_idx + 1]
+                if col_status_idx >= len(tbl_row['tableCells']):
+                    continue
+                cell_st  = tbl_row['tableCells'][col_status_idx]
+                cnt_st   = cell_st.get('content', [])
+                if not cnt_st:
+                    continue
+                # endIndex do último parágrafo da célula = onde inserir
+                insert_at = cnt_st[-1].get('endIndex', 0) - 1
+                if insert_at <= 0:
+                    continue
+                # Inserir "\n☐ Reagendado\n☐ Histórico" de trás pra frente
+                # Ordem reversa: primeiro Reagendado, depois Histórico
+                # pois inserimos antes do 
+ final da célula
+                reqs_status.append({'insertText': {
+                    'location': {'index': insert_at},
+                    'text': "\n☐ Reagendado\n☐ Histórico"
+                }})
+            if reqs_status:
+                batch_update_com_retry(docs_service, doc_id, reqs_status)
 
     time.sleep(0.5)
     aplicar_formatacao_tabela(docs_service, doc_id, rows, grupos_data, semana_tipo=semana_tipo)
@@ -1197,8 +1241,9 @@ def aplicar_formatacao_tabela(docs_service, doc_id, rows, grupos_data, semana_ti
     table_start = tabela_element['startIndex']
     requests    = []
 
+    n_cols_tab = 6 if semana_tipo == "sm1" else 7
     for row_idx in range(len(tabela.get('tableRows', []))):
-        for col_idx in range(7):
+        for col_idx in range(n_cols_tab):
             borda = {'color': {'color': {'rgbColor': {'red': 0, 'green': 0, 'blue': 0}}}, 'width': {'magnitude': 1, 'unit': 'PT'}, 'dashStyle': 'SOLID'}
             requests.append({'updateTableCellStyle': {
                 'tableRange': {'tableCellLocation': {'tableStartLocation': {'index': table_start}, 'rowIndex': row_idx, 'columnIndex': col_idx}, 'rowSpan': 1, 'columnSpan': 1},
@@ -1206,7 +1251,7 @@ def aplicar_formatacao_tabela(docs_service, doc_id, rows, grupos_data, semana_ti
                 'fields': 'borderTop,borderBottom,borderLeft,borderRight'
             }})
 
-    for col_idx in range(7):
+    for col_idx in range(n_cols_tab):
         requests.append({'updateTableCellStyle': {
             'tableRange': {'tableCellLocation': {'tableStartLocation': {'index': table_start}, 'rowIndex': 0, 'columnIndex': col_idx}, 'rowSpan': 1, 'columnSpan': 1},
             'tableCellStyle': {'backgroundColor': {'color': {'rgbColor': {'red': 0.4, 'green': 0.4, 'blue': 0.4}}}},
@@ -1227,7 +1272,7 @@ def aplicar_formatacao_tabela(docs_service, doc_id, rows, grupos_data, semana_ti
         else:
             cor = {'red': 0.85, 'green': 0.85, 'blue': 0.85} if cor_alternada else {'red': 1.0, 'green': 1.0, 'blue': 1.0}
         for idx in indices:
-            for col_idx in range(7):
+            for col_idx in range(n_cols_tab):
                 requests.append({'updateTableCellStyle': {
                     'tableRange': {'tableCellLocation': {'tableStartLocation': {'index': table_start}, 'rowIndex': idx + 1, 'columnIndex': col_idx}, 'rowSpan': 1, 'columnSpan': 1},
                     'tableCellStyle': {'backgroundColor': {'color': {'rgbColor': cor}}},
@@ -1266,7 +1311,7 @@ def aplicar_formatacao_tabela(docs_service, doc_id, rows, grupos_data, semana_ti
         tabela         = tabela_element['table']
         primeira_linha = tabela['tableRows'][0]
         reqs_negrito   = []
-        for col_idx in range(7):
+        for col_idx in range(n_cols_tab):
             if col_idx < len(primeira_linha['tableCells']):
                 cell_content = primeira_linha['tableCells'][col_idx].get('content', [])
                 if cell_content:
@@ -1297,7 +1342,7 @@ def aplicar_formatacao_tabela(docs_service, doc_id, rows, grupos_data, semana_ti
             tabela2     = tabela_el2['table']
             tbl_start2  = tabela_el2['startIndex']
             col_ativ    = 2  # coluna ATIVIDADE (índice 2)
-            col_status  = 6  # coluna STATUS (índice 6, apenas sm1)
+            col_status  = 5  # coluna STATUS (índice 5 em sm1 sem UNIF)
             reqs_cor    = []
             azul        = {'red': 0.07, 'green': 0.36, 'blue': 0.68}
             CORES_STATUS = {
@@ -1327,15 +1372,16 @@ def aplicar_formatacao_tabela(docs_service, doc_id, rows, grupos_data, semana_ti
                                     'textStyle': {'foregroundColor': {'color': {'rgbColor': azul}}},
                                     'fields': 'foregroundColor'
                                 }})
-                # Colorir STATUS (3 linhas) apenas para tabela sm1
+                # Colorir STATUS (3 parágrafos) apenas para tabela sm1
+                # Ordem de inserção foi: ☐ Realizado / ☐ Histórico / ☐ Reagendado
                 if semana_tipo == "sm1" and col_status < len(tbl_row['tableCells']):
                     cell_s = tbl_row['tableCells'][col_status]
                     cnt_s  = cell_s.get('content', [])
-                    # Cada parágrafo da célula = uma linha do STATUS
                     COR_STATUS_LINES = [
-                        {'red': 0.07, 'green': 0.36, 'blue': 0.68},   # Realizado — azul
-                        {'red': 0.0,  'green': 0.50, 'blue': 0.13},   # Histórico — verde
-                        {'red': 0.78, 'green': 0.08, 'blue': 0.08},   # Reagendado — vermelho
+                        # (cor_rgb, strikethrough)
+                        ({'red': 0.07, 'green': 0.36, 'blue': 0.68}, False),  # ☐ Realizado — azul
+                        ({'red': 0.0,  'green': 0.50, 'blue': 0.13}, False),  # ☐ Histórico — verde
+                        ({'red': 0.78, 'green': 0.08, 'blue': 0.08}, False),  # ☐ Reagendado — vermelho
                     ]
                     for par_idx, paragrafo in enumerate(cnt_s):
                         if par_idx >= len(COR_STATUS_LINES):
@@ -1344,14 +1390,15 @@ def aplicar_formatacao_tabela(docs_service, doc_id, rows, grupos_data, semana_ti
                         p_end   = paragrafo.get('endIndex')
                         if p_start is None or p_end is None or p_end <= p_start + 1:
                             continue
-                        cor_linha = COR_STATUS_LINES[par_idx]
+                        cor_linha, strike = COR_STATUS_LINES[par_idx]
                         reqs_cor.append({'updateTextStyle': {
                             'range': {'startIndex': p_start, 'endIndex': p_end - 1},
                             'textStyle': {
                                 'foregroundColor': {'color': {'rgbColor': cor_linha}},
                                 'fontSize': {'magnitude': 10, 'unit': 'PT'},
+                                'strikethrough': strike,
                             },
-                            'fields': 'foregroundColor,fontSize'
+                            'fields': 'foregroundColor,fontSize,strikethrough'
                         }})
             if reqs_cor:
                 batch_update_com_retry(docs_service, doc_id, reqs_cor)
