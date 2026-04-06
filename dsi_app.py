@@ -62,7 +62,7 @@ IDS = {
     "operacoes": "a253be647f9dd8c1b044f0e89643a569d95cbd9054f4eb8401c373a4cb2dd667@group.calendar.google.com",
 }
 
-# Mapa email → rótulo da coluna AG (usado em construir_tabela_semana)
+# Mapa email → rótulo da coluna AG
 RESP_MAP = {
     IDS["cmt"]:      "Cmt",
     IDS["cmdo"]:     "Cmdo",
@@ -94,7 +94,7 @@ RESP_MAP = {
 MEU_EMAIL = IDS["s3"]
 
 # =========================================================
-# RETRY COM BACKOFF EXPONENCIAL — resolve HTTP 429
+# RETRY COM BACKOFF EXPONENCIAL
 # =========================================================
 
 def batch_update_com_retry(docs_service, doc_id, requests_list, max_tentativas=6, tamanho_lote=50):
@@ -144,8 +144,9 @@ def formatar_mes_abreviado(dt_date: datetime.date):
     meses = ["JAN", "FEV", "MAR", "ABR", "MAI", "JUN", "JUL", "AGO", "SET", "OUT", "NOV", "DEZ"]
     return meses[dt_date.month - 1]
 
+# ✅ MELHORIA: DATA em duas linhas — "06 ABR\n(SEG)"
 def fmt_data_coluna(dt_date: datetime.date) -> str:
-    return f"{dt_date.day:02d} {formatar_mes_abreviado(dt_date)} ({formatar_dia_semana(dt_date)})"
+    return f"{dt_date.day:02d} {formatar_mes_abreviado(dt_date)}\n({formatar_dia_semana(dt_date)})"
 
 def monday_of(d: datetime.date) -> datetime.date:
     return d - datetime.timedelta(days=d.weekday())
@@ -497,7 +498,7 @@ def buscar_fase(service, d_ini_s, d_fim_s1):
     return melhor_fase
 
 # =========================================================
-# OPERAÇÕES
+# OPERAÇÕES — ✅ MELHORIA: inclui data início, data fim, local e efetivo
 # =========================================================
 
 def buscar_operacoes(service, d_ini_s, d_fim_s1):
@@ -516,12 +517,37 @@ def buscar_operacoes(service, d_ini_s, d_fim_s1):
 
         if (s_date <= d_fim_s1) and (e_date >= d_ini_s):
             summary = limpar_texto(ev.get("summary", "")).strip()
-            if summary:
-                tipo_match    = re.search(r'\(([^)]+)\)', summary)
-                tipo          = tipo_match.group(1).strip().upper() if tipo_match else ""
-                nome_operacao = re.sub(r'\s*\([^)]+\)', '', summary).strip() if tipo_match else summary
-                operacoes_ativas.append({'nome': nome_operacao, 'tipo': tipo, 'data_inicio': s_date})
+            if not summary:
+                continue
 
+            tipo_match    = re.search(r'\(([^)]+)\)', summary)
+            tipo          = tipo_match.group(1).strip().upper() if tipo_match else ""
+            nome_operacao = re.sub(r'\s*\([^)]+\)', '', summary).strip() if tipo_match else summary
+
+            local     = limpar_texto(ev.get("location",    "")).strip()
+            descricao = limpar_texto(ev.get("description", "")).strip()
+
+            # Extrair efetivo da descrição
+            # Aceita: "Efetivo: 120", "Ef: 50", "120 militares", "Efetivo 80 Mil"
+            efetivo = ""
+            if descricao:
+                m = re.search(
+                    r'(?:efetivo|ef\.?)\s*[:\-]?\s*(\d+)|(\d+)\s*(?:militares?|mil\.?)',
+                    descricao, re.IGNORECASE
+                )
+                if m:
+                    efetivo = m.group(1) or m.group(2)
+
+            operacoes_ativas.append({
+                'nome':        nome_operacao,
+                'tipo':        tipo,
+                'data_inicio': s_date,
+                'data_fim':    e_date,
+                'local':       local,
+                'efetivo':     efetivo,
+            })
+
+    # Deduplicar por nome+tipo
     operacoes_unicas = {}
     for op in operacoes_ativas:
         chave = f"{op['nome']}_{op['tipo']}"
@@ -532,17 +558,28 @@ def buscar_operacoes(service, d_ini_s, d_fim_s1):
 
     linhas_formatadas = []
     for op in operacoes_ordenadas:
-        # ✅ CORREÇÃO 1: removidos numeração ({i}) e traços (__ Militares / ___)
+        ini_fmt = f"{op['data_inicio'].day:02d} {formatar_mes_abreviado(op['data_inicio'])} {str(op['data_inicio'].year)[-2:]}"
+        fim_fmt = f"{op['data_fim'].day:02d} {formatar_mes_abreviado(op['data_fim'])} {str(op['data_fim'].year)[-2:]}"
+
         if op['tipo']:
             linha = f" {op['nome']} ({op['tipo']})"
         else:
             linha = f" {op['nome']}"
+
+        linha += f" | {ini_fmt} a {fim_fmt}"
+
+        if op['local']:
+            linha += f" | {op['local']}"
+
+        if op['efetivo']:
+            linha += f" | Ef: {op['efetivo']} Mil"
+
         linhas_formatadas.append(linha)
 
     return linhas_formatadas
 
 # =========================================================
-# BULLETS CURSOS/ESTÁGIOS — com Smn, Local e Militares
+# BULLETS CURSOS/ESTÁGIOS — ✅ MELHORIA: militares marcados com §§§ para colorir
 # =========================================================
 
 def bullets_periodo(service, calendar_id: str, d_ini: datetime.date, d_fim: datetime.date, incluir_responsavel: bool = False):
@@ -599,12 +636,12 @@ def bullets_periodo(service, calendar_id: str, d_ini: datetime.date, d_fim: date
 
         if local:
             texto += f" - {local}"
+
+        # ✅ Militares marcados com §§§ para colorir em vermelho-marrom no Docs
         if militares:
             lista_mil = [m.strip() for m in re.split(r'[,;\n]', militares) if m.strip()]
             if lista_mil:
-                texto += " - " + ", ".join(lista_mil)
-
-        # ✅ CORREÇÃO 2: removido bloco "if incluir_responsavel: texto += ' - ___'"
+                texto += " - §§§" + ", ".join(lista_mil) + "§§§"
 
         linhas.append((s_date, texto))
 
@@ -635,7 +672,7 @@ def buscar_feriados(service, d_ini: datetime.date, d_fim: datetime.date):
     return feriados
 
 # =========================================================
-# ATIVIDADES FUTURAS — automático, 45 dias após fim S+1
+# ATIVIDADES FUTURAS
 # =========================================================
 
 def buscar_atividades_futuras(service, fim_s1: datetime.date) -> list:
@@ -738,11 +775,8 @@ def buscar_atividades_futuras(service, fim_s1: datetime.date) -> list:
 
 # =========================================================
 # TABELAS
-# Prioridade: número menor = agenda "dona" do evento quando
-# há duplicata pelo mesmo event_id em múltiplas agendas.
 # =========================================================
 
-# Prioridade por calendar_id — menor = mais prioritário
 PRIORIDADE_RESP = {
     IDS["npor"]:     1,
     IDS["npor_ste"]: 2,
@@ -771,7 +805,6 @@ PRIORIDADE_RESP = {
     IDS["s3"]:       99,
 }
 
-# Lista de todas as agendas carregadas na tabela
 AGENDAS_TABELA = [
     "s3", "cmt", "cmdo", "sub_cmt", "adj_cmdo",
     "sec_1", "sec_4",
@@ -783,7 +816,6 @@ AGENDAS_TABELA = [
 ]
 
 def construir_tabela_semana(service, d_ini, d_fim, incluir_cmt, incluir_pgi, feriados, semana_tipo="s"):
-    # semana_tipo: "sm1" | "s" | "s1"
     todos = []
 
     for chave in AGENDAS_TABELA:
@@ -796,7 +828,6 @@ def construir_tabela_semana(service, d_ini, d_fim, incluir_cmt, incluir_pgi, fer
         evs_pgi = list_events(service, IDS["pgi"], d_ini, d_fim)
         todos.extend(evs_pgi)
 
-    # Desduplicação com prioridade
     mapa_titulo = {}
     for e in todos:
         s_date, e_date, is_all_day, hora = parse_start_end(e)
@@ -844,7 +875,6 @@ def construir_tabela_semana(service, d_ini, d_fim, incluir_cmt, incluir_pgi, fer
                 resp         = RESP_MAP.get(src, "S3")
                 descricao    = limpar_texto(e.get("description", "")).strip()
 
-                # Description em azul entre parênteses — apenas primeira linha
                 if descricao:
                     primeira_linha_desc = descricao.split("  ")[0].split("\n")[0].strip()[:120]
                     atividade_exib = f"{atividade}\n({primeira_linha_desc})"
@@ -855,7 +885,7 @@ def construir_tabela_semana(service, d_ini, d_fim, incluir_cmt, incluir_pgi, fer
                     "DATA":        fmt_data_coluna(cur) if i == 0 else "",
                     "HORA":        hora,
                     "ATIVIDADE":   atividade,
-                    "ATIV_DESC":   atividade_exib,   # com description em azul
+                    "ATIV_DESC":   atividade_exib,
                     "LOCAL":       local,
                     "UNIF":        "",
                     "AGENDA":      resp,
@@ -966,9 +996,10 @@ def criar_google_doc(creds, titulo_doc, num_fmt, ref_date,
 
     conteudo.append("2. CURSOS E ESTÁGIOS")
     if bullets_cursos:
-        # ✅ CORREÇÃO 3: removida numeração automática ({i}) dos cursos
         for b in bullets_cursos:
-            conteudo.append(f" {b}")
+            # ✅ Remove marcadores §§§ ao inserir no documento
+            linha_limpa = b.replace("§§§", "")
+            conteudo.append(f" {linha_limpa}")
     else:
         conteudo.append("-")
     conteudo.append("")
@@ -988,17 +1019,14 @@ def criar_google_doc(creds, titulo_doc, num_fmt, ref_date,
 
     texto_completo = "\n".join(conteudo)
 
-    # --- Inserção do texto inicial ---
     batch_update_com_retry(docs_service, doc_id, [
         {'insertText': {'location': {'index': 1}, 'text': texto_completo}}
     ])
 
-    # --- Tabela Semana S-1 ---
     doc_atual = docs_service.documents().get(documentId=doc_id).execute()
     end_index = doc_atual['body']['content'][-1]['endIndex']
     inserir_e_preencher_tabela(docs_service, doc_id, rows_sm1, end_index - 1, semana_tipo="sm1")
 
-    # --- Cabeçalho Semana S ---
     doc_atual = docs_service.documents().get(documentId=doc_id).execute()
     end_index = doc_atual['body']['content'][-1]['endIndex']
     texto_s   = f"\n b. Semana (S) - {fmt_periodo_titulo(ini_s, fim_s)} - EXECUTAR OU REAGENDAR\n"
@@ -1006,12 +1034,10 @@ def criar_google_doc(creds, titulo_doc, num_fmt, ref_date,
         {'insertText': {'location': {'index': end_index - 1}, 'text': texto_s}}
     ])
 
-    # --- Tabela Semana S ---
     doc_atual = docs_service.documents().get(documentId=doc_id).execute()
     end_index = doc_atual['body']['content'][-1]['endIndex']
     inserir_e_preencher_tabela(docs_service, doc_id, rows_s, end_index - 1, semana_tipo="s")
 
-    # --- Cabeçalho Semana S+1 ---
     doc_atual = docs_service.documents().get(documentId=doc_id).execute()
     end_index = doc_atual['body']['content'][-1]['endIndex']
     texto_s1  = f"\n c. Semana (S+1) - {fmt_periodo_titulo(ini_s1, fim_s1)} - PLANEJAR\n"
@@ -1019,12 +1045,10 @@ def criar_google_doc(creds, titulo_doc, num_fmt, ref_date,
         {'insertText': {'location': {'index': end_index - 1}, 'text': texto_s1}}
     ])
 
-    # --- Tabela Semana S+1 ---
     doc_atual = docs_service.documents().get(documentId=doc_id).execute()
     end_index = doc_atual['body']['content'][-1]['endIndex']
     inserir_e_preencher_tabela(docs_service, doc_id, rows_s1, end_index - 1, semana_tipo="s1")
 
-    # --- Conteúdo final (seções 5–8 + assinatura) ---
     doc_atual = docs_service.documents().get(documentId=doc_id).execute()
     end_index = doc_atual['body']['content'][-1]['endIndex']
 
@@ -1072,7 +1096,6 @@ def criar_google_doc(creds, titulo_doc, num_fmt, ref_date,
         {'insertText': {'location': {'index': end_index - 1}, 'text': "\n".join(conteudo_final)}}
     ])
 
-    # --- Formatação global ---
     time.sleep(3)
     formatar_documento_completo(docs_service, doc_id, rows_sm1, rows_s, rows_s1, bullets_cursos=bullets_cursos, ativ_futuras_linhas=ativ_futuras_linhas)
     return doc_id
@@ -1100,10 +1123,11 @@ def inserir_e_preencher_tabela(docs_service, doc_id, rows, insert_index, semana_
     if not tabela:
         return
 
+    # ✅ MELHORIA: DATA e HORA com larguras ajustadas (compactas)
     if semana_tipo == "sm1":
-        larguras_pt = [80, 38, 190, 120, 35, 65]   # 6 cols: DATA HORA ATIV LOCAL AG STATUS
+        larguras_pt = [52, 30, 210, 125, 35, 70]   # DATA menor, HORA estreito
     else:
-        larguras_pt = [95, 38, 185, 125, 28, 28, 28]   # 7 cols
+        larguras_pt = [52, 30, 205, 132, 28, 30, 28]
 
     doc_temp = docs_service.documents().get(documentId=doc_id).execute()
     for el in reversed(doc_temp['body']['content']):
@@ -1157,8 +1181,6 @@ def inserir_e_preencher_tabela(docs_service, doc_id, rows, insert_index, semana_
                         valor = row_data.get(cols[col_idx], "")
                         texto = "" if (pd.isna(valor) if isinstance(valor, float) else (valor is None or str(valor).strip() == '')) else str(valor).strip()
                         if texto:
-                            # STATUS: inserir só a primeira linha aqui;
-                            # as outras linhas são inseridas depois via parágrafos
                             if cols[col_idx] == "STATUS":
                                 primeira = texto.split("\n")[0]
                                 all_requests.append({'insertText': {'location': {'index': start_idx}, 'text': primeira}})
@@ -1180,7 +1202,6 @@ def inserir_e_preencher_tabela(docs_service, doc_id, rows, insert_index, semana_
         except Exception as e:
             print(f"Erro preencher tabela: {e}")
 
-    # --- Inserir linhas 2 e 3 do STATUS como parágrafos separados ---
     if semana_tipo == "sm1":
         time.sleep(1)
         doc_status = docs_service.documents().get(documentId=doc_id).execute()
@@ -1192,7 +1213,6 @@ def inserir_e_preencher_tabela(docs_service, doc_id, rows, insert_index, semana_
         if tabela_st:
             col_status_idx = cols.index("STATUS")
             reqs_status = []
-            # Percorre de trás para frente para não deslocar índices
             for row_idx in range(len(rows) - 1, -1, -1):
                 if row_idx + 1 >= len(tabela_st['tableRows']):
                     continue
@@ -1203,12 +1223,9 @@ def inserir_e_preencher_tabela(docs_service, doc_id, rows, insert_index, semana_
                 cnt_st   = cell_st.get('content', [])
                 if not cnt_st:
                     continue
-                # endIndex do último parágrafo da célula = onde inserir
                 insert_at = cnt_st[-1].get('endIndex', 0) - 1
                 if insert_at <= 0:
                     continue
-                # Inserir "\n☐ Reagendado\n☐ Histórico" de trás pra frente
-                # Ordem reversa: primeiro Reagendado, depois Histórico antes do final da célula
                 reqs_status.append({'insertText': {
                     'location': {'index': insert_at},
                     'text': "\nReagendado\nHistórico"
@@ -1276,19 +1293,24 @@ def aplicar_formatacao_tabela(docs_service, doc_id, rows, grupos_data, semana_ti
         if not eh_dia_especial:
             cor_alternada = not cor_alternada
 
-    # Aplicar contentAlignment MIDDLE + padding via tableRange (não depende de startIndex)
+    # ✅ MELHORIA: padding lateral de 0,5 cm (14,17 PT) em todas as células
     for row_idx in range(len(tabela.get('tableRows', []))):
         for col_idx in range(n_cols_tab):
             requests.append({'updateTableCellStyle': {
                 'tableRange': {'tableCellLocation': {'tableStartLocation': {'index': table_start}, 'rowIndex': row_idx, 'columnIndex': col_idx}, 'rowSpan': 1, 'columnSpan': 1},
-                'tableCellStyle': {'contentAlignment': 'MIDDLE', 'paddingTop': {'magnitude': 2, 'unit': 'PT'}, 'paddingBottom': {'magnitude': 2, 'unit': 'PT'}, 'paddingLeft': {'magnitude': 3, 'unit': 'PT'}, 'paddingRight': {'magnitude': 3, 'unit': 'PT'}},
+                'tableCellStyle': {
+                    'contentAlignment': 'MIDDLE',
+                    'paddingTop':    {'magnitude': 2,     'unit': 'PT'},
+                    'paddingBottom': {'magnitude': 2,     'unit': 'PT'},
+                    'paddingLeft':   {'magnitude': 14.17, 'unit': 'PT'},
+                    'paddingRight':  {'magnitude': 14.17, 'unit': 'PT'},
+                },
                 'fields': 'contentAlignment,paddingTop,paddingBottom,paddingLeft,paddingRight'
             }})
 
     if requests:
         batch_update_com_retry(docs_service, doc_id, requests)
 
-    # Recarregar doc DEPOIS de inserir o texto para ter startIndex corretos
     time.sleep(1)
     doc_recarregado = docs_service.documents().get(documentId=doc_id).execute()
     tabela_atualizada = None
@@ -1341,8 +1363,6 @@ def aplicar_formatacao_tabela(docs_service, doc_id, rows, grupos_data, semana_ti
             except Exception as e:
                 print(f"Erro negrito: {e}")
 
-    # --- Colorir description (em azul) nas células de ATIVIDADE ---
-    # e colorir STATUS nas células correspondentes
     try:
         doc_refresco = docs_service.documents().get(documentId=doc_id).execute()
         tabela_el2   = None
@@ -1353,26 +1373,18 @@ def aplicar_formatacao_tabela(docs_service, doc_id, rows, grupos_data, semana_ti
         if tabela_el2:
             tabela2     = tabela_el2['table']
             tbl_start2  = tabela_el2['startIndex']
-            col_ativ    = 2  # coluna ATIVIDADE (índice 2)
-            col_status  = 5  # coluna STATUS (índice 5 em sm1 sem UNIF)
+            col_ativ    = 2
+            col_status  = 5
             reqs_cor    = []
             azul        = {'red': 0.07, 'green': 0.36, 'blue': 0.68}
-            CORES_STATUS = {
-                'Realizado':           {'red': 0.0,  'green': 0.39, 'blue': 0.0},
-                'Realizado/Histórico': {'red': 0.0,  'green': 0.55, 'blue': 0.27},
-                'Reagendado':          {'red': 0.85, 'green': 0.33, 'blue': 0.1},
-            }
             for row_idx_t, (tbl_row, row_data) in enumerate(
                     zip(tabela2['tableRows'][1:], rows), 1):
-                # Colorir description (2º parágrafo da célula ATIVIDADE) em azul negrito
                 if row_data.get('_tem_desc') and col_ativ < len(tbl_row['tableCells']):
                     cell  = tbl_row['tableCells'][col_ativ]
                     cnt   = cell.get('content', [])
-                    # barra-n cria 2 parágrafos na célula: [0]=atividade, [1]=(description)
-                    if len(cnt) >= 2:
-                        para_desc = cnt[1]
-                        d_start   = para_desc.get('startIndex')
-                        d_end     = para_desc.get('endIndex')
+                    for para_desc in cnt[1:]:
+                        d_start = para_desc.get('startIndex')
+                        d_end   = para_desc.get('endIndex')
                         if d_start is not None and d_end is not None and d_end > d_start + 1:
                             reqs_cor.append({'updateTextStyle': {
                                 'range': {'startIndex': d_start, 'endIndex': d_end - 1},
@@ -1382,16 +1394,13 @@ def aplicar_formatacao_tabela(docs_service, doc_id, rows, grupos_data, semana_ti
                                 },
                                 'fields': 'foregroundColor,bold'
                             }})
-                # Colorir STATUS (3 parágrafos) apenas para tabela sm1
-                # Ordem de inserção foi: ☐ Realizado / ☐ Histórico / ☐ Reagendado
                 if semana_tipo == "sm1" and col_status < len(tbl_row['tableCells']):
                     cell_s = tbl_row['tableCells'][col_status]
                     cnt_s  = cell_s.get('content', [])
                     COR_STATUS_LINES = [
-                        # (cor_rgb, strikethrough)
-                        ({'red': 0.07, 'green': 0.36, 'blue': 0.68}, False),  # ☐ Realizado — azul
-                        ({'red': 0.0,  'green': 0.50, 'blue': 0.13}, False),  # ☐ Histórico — verde
-                        ({'red': 0.78, 'green': 0.08, 'blue': 0.08}, False),  # ☐ Reagendado — vermelho
+                        ({'red': 0.07, 'green': 0.36, 'blue': 0.68}, False),
+                        ({'red': 0.0,  'green': 0.50, 'blue': 0.13}, False),
+                        ({'red': 0.78, 'green': 0.08, 'blue': 0.08}, False),
                     ]
                     for par_idx, paragrafo in enumerate(cnt_s):
                         if par_idx >= len(COR_STATUS_LINES):
@@ -1442,15 +1451,12 @@ def formatar_documento_completo(docs_service, doc_id, rows_sm1, rows_s, rows_s1,
         batch_update_com_retry(docs_service, doc_id, requests)
         requests = []
 
-    # --- Título DSI: caixa cinza com borda + negrito ---
-    # --- QTS: centralizado e negrito ---
     titulo_pattern   = re.compile(r'DIRETRIZ SEMANAL DE INSTRUÇÃO \d+', re.IGNORECASE)
     cabecalho_pattern = re.compile(
         r'MINISTÉRIO DA DEFESA|EXÉRCITO BRASILEIRO|BATALHÃO DE INFANTARIA|'
         r'Batalhão de Caçadores|BATALHÃO BARÃO DE CAXIAS',
         re.IGNORECASE
     )
-    # Pattern para as linhas do cabeçalho superior (DSI Nº, data, Visto S3, traço, Cap PIERROTI)
     cabecalho_dsi_pattern = re.compile(
         r'^DSI Nº|^Visto S3|^Cap PIERROTI|^_+$',
         re.IGNORECASE
@@ -1475,7 +1481,6 @@ def formatar_documento_completo(docs_service, doc_id, rows_sm1, rows_s, rows_s1,
         if not full_text or p_end <= p_start:
             continue
 
-        # Cabeçalho superior: DSI Nº, data, Visto S3, traço, Cap PIERROTI → negrito preto, sem espaço
         if cabecalho_dsi_pattern.search(full_text) or data_dsi_pattern.search(full_text):
             reqs2.append({'updateTextStyle': {
                 'range': {'startIndex': p_start, 'endIndex': p_end - 1},
@@ -1497,7 +1502,6 @@ def formatar_documento_completo(docs_service, doc_id, rows_sm1, rows_s, rows_s1,
             continue
 
         if cabecalho_pattern.search(full_text):
-            # Centralizar linhas do cabeçalho do batalhão — if independente (não elif)
             reqs2.append({'updateParagraphStyle': {
                 'range': {'startIndex': p_start, 'endIndex': p_end},
                 'paragraphStyle': {'alignment': 'CENTER'},
@@ -1506,7 +1510,6 @@ def formatar_documento_completo(docs_service, doc_id, rows_sm1, rows_s, rows_s1,
             continue
 
         if titulo_pattern.search(full_text):
-            # Centralizar + negrito + fundo cinza
             reqs2.append({'updateParagraphStyle': {
                 'range': {'startIndex': p_start, 'endIndex': p_end},
                 'paragraphStyle': {'alignment': 'CENTER',
@@ -1520,7 +1523,6 @@ def formatar_documento_completo(docs_service, doc_id, rows_sm1, rows_s, rows_s1,
             }})
 
         elif qts_pattern.search(full_text):
-            # Centralizar + negrito + azul
             azul_qts = {'red': 0.07, 'green': 0.36, 'blue': 0.68}
             reqs2.append({'updateParagraphStyle': {
                 'range': {'startIndex': p_start, 'endIndex': p_end},
@@ -1537,7 +1539,6 @@ def formatar_documento_completo(docs_service, doc_id, rows_sm1, rows_s, rows_s1,
             }})
 
         elif conf_pattern.search(full_text):
-            # Colorir laranja (CONFIRMAR OU REAGENDAR / EXECUTAR / PLANEJAR)
             reqs2.append({'updateTextStyle': {
                 'range': {'startIndex': p_start, 'endIndex': p_end - 1},
                 'textStyle': {'foregroundColor': {'color': {'rgbColor': laranja}}, 'bold': True},
@@ -1546,7 +1547,7 @@ def formatar_documento_completo(docs_service, doc_id, rows_sm1, rows_s, rows_s1,
 
     if reqs2:
         batch_update_com_retry(docs_service, doc_id, reqs2)
-        requests = []  # reset para evitar duplicação
+        requests = []
 
     padroes_negrito = [
         r"1\.\s+OPERA[ÇC][ÕO]ES[:\s]?",
@@ -1555,7 +1556,6 @@ def formatar_documento_completo(docs_service, doc_id, rows_sm1, rows_s, rows_s1,
         r"4\.\s+INSTRU[ÇC][ÃA]O",
         r"5\.\s+FORMATURA GERAL",
         r"6\.\s+ATIVIDADES FUTURAS",
-
     ]
 
     for element in content:
@@ -1585,11 +1585,10 @@ def formatar_documento_completo(docs_service, doc_id, rows_sm1, rows_s, rows_s1,
     if requests:
         batch_update_com_retry(docs_service, doc_id, requests)
 
-    # --- Colorir cursos (após primeiro " - ") e atividades futuras (após " - ") em azul ---
-    azul_rgb = {'red': 0.07, 'green': 0.36, 'blue': 0.68}
+    # ✅ Colorir texto após " - " em cursos/futuras (azul) e militares (vermelho-marrom)
+    azul_rgb      = {'red': 0.07, 'green': 0.36, 'blue': 0.68}
+    verm_marrom   = {'red': 0.55, 'green': 0.13, 'blue': 0.13}
 
-    # Colorir texto após " - " nos itens das seções 2 (Cursos) e 6 (Ativ Futuras)
-    # Abordagem: varrer doc por seção, sem depender de matching por texto
     SEC_CURSOS  = re.compile(r'^2\.\s+CURSOS', re.IGNORECASE)
     SEC_DATAS   = re.compile(r'^3\.\s+DATAS', re.IGNORECASE)
     SEC_FUTURAS = re.compile(r'^6\.\s+ATIVIDADES FUTURAS', re.IGNORECASE)
@@ -1612,7 +1611,6 @@ def formatar_documento_completo(docs_service, doc_id, rows_sm1, rows_s, rows_s1,
         p_start3  = element.get('startIndex', 0)
         p_end3    = element.get('endIndex', 0)
 
-        # Detectar entrada/saída de seções
         if SEC_CURSOS.search(full3):
             dentro_cursos  = True
             dentro_futuras = False
@@ -1625,27 +1623,57 @@ def formatar_documento_completo(docs_service, doc_id, rows_sm1, rows_s, rows_s1,
             dentro_cursos  = False
             continue
 
-
         if not (dentro_cursos or dentro_futuras):
             continue
         if not full3 or ' - ' not in raw_txt:
             continue
 
-        # Colorir após o primeiro " - "
-        abs_sep = raw_txt.find(' - ')
-        if abs_sep < 0:
-            continue
-        color_start = p_start3 + abs_sep + 3
-        color_end   = p_end3 - 1
-        if color_end > color_start:
-            reqs3.append({'updateTextStyle': {
-                'range': {'startIndex': color_start, 'endIndex': color_end},
-                'textStyle': {
-                    'foregroundColor': {'color': {'rgbColor': azul_rgb}},
-                    'bold': True,
-                },
-                'fields': 'foregroundColor,bold'
-            }})
+        # ✅ Colorir militares (§§§...§§§) em vermelho-marrom (apenas em cursos)
+        if dentro_cursos and '§§§' in raw_txt:
+            abs_mil_ini = raw_txt.find('§§§')
+            abs_mil_fim = raw_txt.rfind('§§§')
+            if abs_mil_ini >= 0 and abs_mil_fim > abs_mil_ini:
+                color_mil_start = p_start3 + abs_mil_ini
+                color_mil_end   = p_start3 + abs_mil_fim
+                if color_mil_end > color_mil_start:
+                    reqs3.append({'updateTextStyle': {
+                        'range': {'startIndex': color_mil_start, 'endIndex': color_mil_end},
+                        'textStyle': {
+                            'foregroundColor': {'color': {'rgbColor': verm_marrom}},
+                            'bold': True,
+                        },
+                        'fields': 'foregroundColor,bold'
+                    }})
+            # Colorir o restante (antes dos §§§) em azul
+            abs_sep = raw_txt.find(' - ')
+            if abs_sep >= 0:
+                color_start = p_start3 + abs_sep + 3
+                color_end   = p_start3 + abs_mil_ini
+                if color_end > color_start:
+                    reqs3.append({'updateTextStyle': {
+                        'range': {'startIndex': color_start, 'endIndex': color_end},
+                        'textStyle': {
+                            'foregroundColor': {'color': {'rgbColor': azul_rgb}},
+                            'bold': True,
+                        },
+                        'fields': 'foregroundColor,bold'
+                    }})
+        else:
+            # Colorir tudo após " - " em azul (sem militares marcados)
+            abs_sep = raw_txt.find(' - ')
+            if abs_sep < 0:
+                continue
+            color_start = p_start3 + abs_sep + 3
+            color_end   = p_end3 - 1
+            if color_end > color_start:
+                reqs3.append({'updateTextStyle': {
+                    'range': {'startIndex': color_start, 'endIndex': color_end},
+                    'textStyle': {
+                        'foregroundColor': {'color': {'rgbColor': azul_rgb}},
+                        'bold': True,
+                    },
+                    'fields': 'foregroundColor,bold'
+                }})
 
     if reqs3:
         try:
@@ -1846,26 +1874,37 @@ try:
     with col1:
         st.markdown("**2. CURSOS E ESTÁGIOS**")
         for item in (bullets_cursos or ["-"]):
-            st.markdown(f" {item}")
+            # ✅ Remove §§§ no preview, exibe militares em vermelho-marrom via HTML
+            if '§§§' in item:
+                partes = item.split('§§§')
+                texto_base = partes[0]
+                militares  = partes[1] if len(partes) > 1 else ""
+                st.markdown(
+                    f" {texto_base}<span style='color:#8B2020;font-weight:bold'>{militares}</span>",
+                    unsafe_allow_html=True
+                )
+            else:
+                st.markdown(f" {item}")
     with col2:
         st.markdown("**3. DATAS COMEMORATIVAS E FERIADOS**")
         for item in (bullets_datas or ["-"]):
             st.markdown(f" {item}")
 
     def render_tabela_html(rows, especial_list, table_id="dsi", semana_tipo="s"):
+        # ✅ MELHORIA: DATA e HORA com larguras compactas
         if semana_tipo == "sm1":
             cols   = ["DATA", "HORA", "ATIV_DESC", "LOCAL", "UNIF", "AGENDA", "STATUS"]
             hdrs   = ["DATA", "HORA", "ATIVIDADE", "LOCAL", "UNIF", "AG",     "STATUS"]
-            widths = {"DATA":"10%","HORA":"5%","ATIV_DESC":"30%","LOCAL":"20%","UNIF":"5%","AGENDA":"5%","STATUS":"10%"}
+            widths = {"DATA":"7%","HORA":"4%","ATIV_DESC":"32%","LOCAL":"21%","UNIF":"5%","AGENDA":"5%","STATUS":"11%"}
         else:
             cols   = ["DATA", "HORA", "ATIV_DESC", "LOCAL", "UNIF", "AGENDA", "OBS"]
             hdrs   = ["DATA", "HORA", "ATIVIDADE", "LOCAL", "UNIF", "AG",     "OBS"]
-            widths = {"DATA":"11%","HORA":"5%","ATIV_DESC":"33%","LOCAL":"22%","UNIF":"5%","AGENDA":"6%","OBS":"8%"}
+            widths = {"DATA":"7%","HORA":"4%","ATIV_DESC":"35%","LOCAL":"23%","UNIF":"5%","AGENDA":"6%","OBS":"8%"}
         html   = f"""
         <style>
         #{table_id} {{width:100%;border-collapse:collapse;font-size:12px;font-family:Calibri,Arial,sans-serif;}}
-        #{table_id} th {{background:#555;color:white;text-align:center;vertical-align:middle;padding:4px 3px;border:1px solid #999;font-weight:bold;}}
-        #{table_id} td {{text-align:center;vertical-align:middle;padding:3px 3px;border:1px solid #ccc;line-height:1.2;}}
+        #{table_id} th {{background:#555;color:white;text-align:center;vertical-align:middle;padding:4px 8px;border:1px solid #999;font-weight:bold;}}
+        #{table_id} td {{text-align:center;vertical-align:middle;padding:3px 8px;border:1px solid #ccc;line-height:1.2;}}
         #{table_id} tr.alt {{background:#ddd;}} #{table_id} tr.normal {{background:#fff;}}
         #{table_id} tr.especial td {{color:red;background:#fdd;}}
         .desc-azul {{color:#1258ae;}}
@@ -1882,8 +1921,10 @@ try:
             html += f'<tr class="{cls}">'
             for c in cols:
                 val = row.get(c, "") or ""
-                if c == "ATIV_DESC" and row.get("_tem_desc"):
-                    # description está na segunda linha (separada por \n)
+                if c == "DATA":
+                    # ✅ Quebra de linha na coluna DATA para exibir "06 ABR\n(SEG)"
+                    val = val.replace("\n", "<br>")
+                elif c == "ATIV_DESC" and row.get("_tem_desc"):
                     partes = val.split("\n", 1)
                     if len(partes) == 2:
                         val = partes[0] + f'<br><span class="desc-azul">' + partes[1] + "</span>"
@@ -1935,8 +1976,6 @@ try:
                 st.markdown(linha)
         else:
             st.info("Nenhuma atividade encontrada no período.")
-
-
 
 except Exception as e:
     st.error(f"❌ Erro no sistema: {e}")
