@@ -603,8 +603,8 @@ def buscar_projetos_obras(service, d_ini_s, d_fim_s1):
       - Se descricao tem linha "PNR:"      => item de PNR
       (um evento pode ter ambos)
     """
-    d_busca_ini = d_ini_s - datetime.timedelta(days=30)
-    d_busca_fim = d_fim_s1 + datetime.timedelta(days=7)
+    d_busca_ini = d_ini_s - datetime.timedelta(days=365)
+    d_busca_fim = d_fim_s1 + datetime.timedelta(days=30)
     evs = list_events(service, IDS['proj_obras'], d_busca_ini, d_busca_fim)
 
     fiscalizacao = []
@@ -644,11 +644,15 @@ def buscar_projetos_obras(service, d_ini_s, d_fim_s1):
         vila        = ''
         pnr_nome    = ''
 
-        for linha in descricao_raw.replace('\r', '').split('\n'):
+        # Remover tags HTML e emojis da descricao antes de parsear
+        desc_clean = re.sub(r'<[^>]+>', ' ', descricao_raw)
+        desc_clean = re.sub(r'[^-À-ÿ0-9 \-:./,;()\n\r]', '', desc_clean)
+        for linha in desc_clean.replace('\r', '').split('\n'):
             linha_s = linha.strip()
-            m_fisc = re.match(r'[Ff]isc\s*[Aa]dm\s*:\s*(.*)', linha_s)
-            m_vila = re.match(r'[Vv]ila\s*:\s*(.*)', linha_s)
-            m_pnr  = re.match(r'[Pp][Nn][Rr]\s*:\s*(.*)', linha_s)
+            # re.search para tolerar prefixos (icones, espacos)
+            m_fisc = re.search(r'[Ff]isc\s*[Aa]dm\s*:\s*(.*)', linha_s)
+            m_vila = re.search(r'[Vv]ila\s*:\s*(.*)', linha_s)
+            m_pnr  = re.search(r'[Pp][Nn][Rr]\s*:\s*(.*)', linha_s)
             if m_fisc:
                 fisc_missao = limpar_texto(m_fisc.group(1)).strip()
             if m_vila:
@@ -1847,6 +1851,46 @@ def criar_google_doc_safe(creds, *args, **kwargs):
 # INTERFACE STREAMLIT
 # =========================================================
 
+def render_lista_html(itens, list_id="lista"):
+    """Renderiza lista de bullets estilo item 2 (Cursos):
+    - parte antes do primeiro ' - ' em texto normal (data/período)
+    - parte após o primeiro ' - ' em azul negrito (descrição)
+    - última parte após o último ' - ' em vermelho-marrom (militares, se houver §§§)
+    """
+    html = f'''<div style="font-family:Calibri,Arial,sans-serif;font-size:13px;line-height:1.6;">'''
+    for item in itens:
+        if not item or item.strip() == '-':
+            html += '<div style="padding:1px 0 1px 8px;">-</div>'
+            continue
+        # Detectar militares via §§§
+        tem_militares = '§§§' in item
+        if tem_militares:
+            partes_mil = item.split('§§§')
+            texto_base = partes_mil[0]   # tudo antes dos §§§
+            militares  = partes_mil[1] if len(partes_mil) > 1 else ''
+        else:
+            texto_base = item
+            militares  = ''
+
+        sep = texto_base.find(' - ')
+        if sep >= 0:
+            data_part = texto_base[:sep]
+            info_part = texto_base[sep+3:]
+            linha_html = (
+                f'<span style="color:#222">{data_part}</span>'
+                f' - <span style="color:#1258ae;font-weight:bold">{info_part}</span>'
+            )
+        else:
+            linha_html = f'<span style="color:#222">{texto_base}</span>'
+
+        if militares:
+            linha_html += f' - <span style="color:#8B2020;font-weight:bold">{militares}</span>'
+
+        html += f'<div style="padding:1px 0 1px 8px;">{linha_html}</div>'
+    html += '</div>'
+    return html
+
+
 st.set_page_config(page_title="DSI 24º BIS", layout="wide")
 
 st.markdown("""
@@ -2026,18 +2070,22 @@ try:
     col1, col2 = st.columns(2)
     with col1:
         st.markdown("**2. CURSOS E ESTÁGIOS**")
-        for item in (bullets_cursos or ["-"]):
-            # ✅ Remove §§§ no preview, exibe militares em vermelho-marrom via HTML
-            if '§§§' in item:
-                partes = item.split('§§§')
-                texto_base = partes[0]
-                militares  = partes[1] if len(partes) > 1 else ""
-                st.markdown(
-                    f" {texto_base}<span style='color:#8B2020;font-weight:bold'>{militares}</span>",
-                    unsafe_allow_html=True
-                )
-            else:
-                st.markdown(f" {item}")
+        # bullets_cursos tem §§§ para militares — usar render_lista_html
+        itens_cursos = [b['texto'].replace('§§§','§§§') if isinstance(b, dict) else b
+                        for b in (bullets_cursos_info or [])] if bullets_cursos_info else (bullets_cursos or [])
+        # reconstruir com §§§ a partir de bullets_cursos_info
+        itens_render = []
+        if bullets_cursos_info:
+            for b in bullets_cursos_info:
+                t = b['texto']
+                off = b['offset_mil']
+                if off is not None:
+                    itens_render.append(t[:off-3] + ' - §§§' + t[off:] + '§§§')
+                else:
+                    itens_render.append(t)
+        else:
+            itens_render = bullets_cursos or ["-"]
+        st.markdown(render_lista_html(itens_render, "lista_cursos"), unsafe_allow_html=True)
     with col2:
         st.markdown("**3. DATAS COMEMORATIVAS E FERIADOS**")
         for item in (bullets_datas or ["-"]):
@@ -2122,20 +2170,23 @@ try:
 
     with st.expander("6. PROJETOS E OBRAS", expanded=True):
         st.caption("📅 Período: S a S+1 — preenchido automaticamente")
-        if proj_obras_dados:
+        if proj_obras_dados and (proj_obras_dados['fiscalizacao'] or proj_obras_dados['pnr']):
             linhas_po = formatar_projetos_obras_linhas(proj_obras_dados)
             for linha in linhas_po:
                 st.markdown(linha)
         else:
             st.info("Nenhum evento encontrado na agenda Projetos e Obras.")
+        with st.expander("🔍 Debug Projetos e Obras", expanded=False):
+            st.write(f"Período busca: {ini_s - datetime.timedelta(days=365)} a {fim_s1 + datetime.timedelta(days=30)}")
+            st.write(f"Fiscalização: {proj_obras_dados['fiscalizacao'] if proj_obras_dados else 'N/A'}")
+            st.write(f"PNR: {proj_obras_dados['pnr'] if proj_obras_dados else 'N/A'}")
 
     with st.expander("7. ATIVIDADES FUTURAS", expanded=True):
         d_ini_fut = fim_s1 + datetime.timedelta(days=1)
         d_fim_fut = fim_s1 + datetime.timedelta(days=45)
         st.caption(f"📅 Período: {d_ini_fut.strftime('%d/%m/%Y')} a {d_fim_fut.strftime('%d/%m/%Y')} — preenchido automaticamente")
         if ativ_futuras_linhas:
-            for linha in ativ_futuras_linhas:
-                st.markdown(linha)
+            st.markdown(render_lista_html(ativ_futuras_linhas, "lista_futuras"), unsafe_allow_html=True)
         else:
             st.info("Nenhuma atividade encontrada no período.")
 
