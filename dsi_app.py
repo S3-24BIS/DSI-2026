@@ -60,6 +60,7 @@ IDS = {
     "si":        "d140cd6bbf50cb6e5754222732d27f20e9ee833aca680475c0f1f34e0df74fa0@group.calendar.google.com",
     "fase":      "ac05541df4fd8c2dff7eeebe910442a84fd43a9ade0a8699b1d96cf6e2986d1e@group.calendar.google.com",
     "operacoes": "a253be647f9dd8c1b044f0e89643a569d95cbd9054f4eb8401c373a4cb2dd667@group.calendar.google.com",
+    "proj_obras":"ff0f90677f41394c1caebe925fdebda1e69ab47b7d114cbae6a7c8feccaeeef3@group.calendar.google.com",
 }
 
 # Mapa email → rótulo da coluna AG
@@ -578,6 +579,131 @@ def buscar_operacoes(service, d_ini_s, d_fim_s1):
 
     return linhas_formatadas
 
+
+# =========================================================
+# PROJETOS E OBRAS - Item 6: a. Fiscalizacao  b. PNR
+# =========================================================
+
+def buscar_projetos_obras(service, d_ini_s, d_fim_s1):
+    """
+    Lê a agenda Projetos e Obras.
+    Estrutura do evento (conforme print):
+      Titulo:    "Missao | VM Cohatrac | PNR 3o Sgt ELIDA"
+      Local:     "VM Cohatrac"
+      Descricao: linhas com chaves:
+                   Inicio: DD/MM/AAAA
+                   Fim: DD/MM/AAAA
+                   Fisc Adm: <missao fiscalizacao>
+                   Vila: <nome da vila militar>
+                   PNR: <nome do PNR>
+                   Pel Obras  (indicador de subunidade)
+
+    Classificacao:
+      - Se descricao tem linha "Fisc Adm:" => item de Fiscalizacao
+      - Se descricao tem linha "PNR:"      => item de PNR
+      (um evento pode ter ambos)
+    """
+    d_busca_ini = d_ini_s - datetime.timedelta(days=30)
+    d_busca_fim = d_fim_s1 + datetime.timedelta(days=7)
+    evs = list_events(service, IDS['proj_obras'], d_busca_ini, d_busca_fim)
+
+    fiscalizacao = []
+    pnr          = []
+
+    for ev in evs:
+        s_date, e_date, is_all_day, _ = parse_start_end(ev)
+        if not s_date:
+            continue
+        if is_all_day and e_date:
+            e_date = e_date - datetime.timedelta(days=1)
+        if not ((s_date <= d_fim_s1) and (e_date >= d_ini_s)):
+            continue
+
+        descricao_raw = ev.get('description', '') or ''
+        local_ev      = limpar_texto(ev.get('location', '')).strip()
+
+        # Extrair datas da descricao (Inicio/Fim) se existirem
+        ini_desc = re.search(r'[Ii]n[ií]cio\s*:\s*(\d{2}/\d{2}/\d{4})', descricao_raw)
+        fim_desc = re.search(r'[Ff]im\s*:\s*(\d{2}/\d{2}/\d{4})', descricao_raw)
+
+        if ini_desc and fim_desc:
+            try:
+                s_d = datetime.datetime.strptime(ini_desc.group(1), '%d/%m/%Y').date()
+                e_d = datetime.datetime.strptime(fim_desc.group(1), '%d/%m/%Y').date()
+            except ValueError:
+                s_d, e_d = s_date, e_date
+        else:
+            s_d, e_d = s_date, e_date
+
+        ini_fmt = f"{s_d.day:02d} {formatar_mes_abreviado(s_d)} {str(s_d.year)[-2:]}"
+        fim_fmt = f"{e_d.day:02d} {formatar_mes_abreviado(e_d)} {str(e_d.year)[-2:]}"
+        periodo = f"{ini_fmt} a {fim_fmt}" if e_d != s_d else ini_fmt
+
+        # Extrair campos da descricao linha a linha
+        fisc_missao = ''
+        vila        = ''
+        pnr_nome    = ''
+
+        for linha in descricao_raw.replace('\r', '').split('\n'):
+            linha_s = linha.strip()
+            m_fisc = re.match(r'[Ff]isc\s*[Aa]dm\s*:\s*(.*)', linha_s)
+            m_vila = re.match(r'[Vv]ila\s*:\s*(.*)', linha_s)
+            m_pnr  = re.match(r'[Pp][Nn][Rr]\s*:\s*(.*)', linha_s)
+            if m_fisc:
+                fisc_missao = limpar_texto(m_fisc.group(1)).strip()
+            if m_vila:
+                vila = limpar_texto(m_vila.group(1)).strip()
+            if m_pnr:
+                pnr_nome = limpar_texto(m_pnr.group(1)).strip()
+
+        # Vila Militar: preferir campo da descricao, fallback para local do evento
+        vila_final = vila or local_ev
+
+        if fisc_missao:
+            fiscalizacao.append({
+                'periodo': periodo,
+                'missao':  fisc_missao,
+                'local':   vila_final,
+                's_date':  s_d,
+            })
+
+        if pnr_nome:
+            pnr.append({
+                'periodo': periodo,
+                'nome':    pnr_nome,
+                'local':   vila_final,
+                's_date':  s_d,
+            })
+
+    fiscalizacao.sort(key=lambda x: x['s_date'])
+    pnr.sort(key=lambda x: x['s_date'])
+    return {'fiscalizacao': fiscalizacao, 'pnr': pnr}
+
+
+def formatar_projetos_obras_linhas(dados):
+    linhas = []
+    linhas.append(' a. Missoes Fiscalizacao:')
+    if dados['fiscalizacao']:
+        for item in dados['fiscalizacao']:
+            linha = f"   {item['periodo']}"
+            if item['missao']:
+                linha += f": {item['missao']}"
+            if item['local']:
+                linha += f" - {item['local']}"
+            linhas.append(linha)
+    else:
+        linhas.append('   -')
+    linhas.append(' b. PNR (Pelotao de Obras):')
+    if dados['pnr']:
+        for item in dados['pnr']:
+            linha = f"   {item['periodo']} - {item['nome']}"
+            if item['local']:
+                linha += f" - Vila Militar: {item['local']}"
+            linhas.append(linha)
+    else:
+        linhas.append('   -')
+    return linhas
+
 # =========================================================
 # BULLETS CURSOS/ESTÁGIOS — ✅ MELHORIA: militares marcados com §§§ para colorir
 # =========================================================
@@ -654,6 +780,26 @@ def bullets_periodo(service, calendar_id: str, d_ini: datetime.date, d_fim: date
             out.append(texto)
             seen.add(texto)
     return out
+
+
+def bullets_periodo_com_offsets(service, calendar_id, d_ini, d_fim):
+    """
+    Igual a bullets_periodo mas retorna lista de dicts:
+      { 'texto': str (sem §§§), 'offset_mil': int ou None }
+    offset_mil = posição no texto onde os militares começam (após o último " - ")
+    """
+    raw = bullets_periodo(service, calendar_id, d_ini, d_fim, incluir_responsavel=True)
+    result = []
+    for item in raw:
+        if '§§§' in item:
+            idx = item.find(' - §§§')
+            texto_limpo = item.replace('§§§', '')
+            # offset = posição após " - " onde militares começam
+            offset_mil = idx + 3  # len(' - ') = 3
+            result.append({'texto': texto_limpo, 'offset_mil': offset_mil})
+        else:
+            result.append({'texto': item, 'offset_mil': None})
+    return result
 
 # =========================================================
 # FERIADOS
@@ -962,7 +1108,7 @@ def criar_google_doc(creds, titulo_doc, num_fmt, ref_date,
                      ini_sm1, fim_sm1, ini_s, fim_s, ini_s1, fim_s1,
                      si, fase, operacoes_linhas, bullets_cursos, bullets_datas,
                      rows_sm1, rows_s, rows_s1, ativ_futuras_linhas,
-                     fg=None, su="", ativ_nao_exec=""):
+                     proj_obras_dados=None, bullets_cursos_info=None, fg=None, su="", ativ_nao_exec=""):
     if fg is None:
         fg = {"finalidade": "", "dia": "", "dobrado": "", "cancao": "", "gs": "", "armado": ""}
 
@@ -997,9 +1143,9 @@ def criar_google_doc(creds, titulo_doc, num_fmt, ref_date,
     conteudo.append("2. CURSOS E ESTÁGIOS")
     if bullets_cursos:
         for b in bullets_cursos:
-            # ✅ Remove marcadores §§§ ao inserir no documento
-            linha_limpa = b.replace("§§§", "")
-            conteudo.append(f" {linha_limpa}")
+            # bullets_cursos pode ser lista de str ou lista de dicts
+            texto = b['texto'] if isinstance(b, dict) else b.replace("§§§", "")
+            conteudo.append(f" {texto}")
     else:
         conteudo.append("-")
     conteudo.append("")
@@ -1063,7 +1209,20 @@ def criar_google_doc(creds, titulo_doc, num_fmt, ref_date,
     conteudo_final.append(f" 6) Armado e Equipado: {fg.get('armado', '')}")
     conteudo_final.append("")
 
-    conteudo_final.append("6. ATIVIDADES FUTURAS")
+    # --- Item 6: Projetos e Obras ---
+    conteudo_final.append("6. PROJETOS E OBRAS")
+    if proj_obras_dados:
+        for linha in formatar_projetos_obras_linhas(proj_obras_dados):
+            conteudo_final.append(linha)
+    else:
+        conteudo_final.append(" a. Missoes Fiscalizacao:")
+        conteudo_final.append("   -")
+        conteudo_final.append(" b. PNR (Pelotao de Obras):")
+        conteudo_final.append("   -")
+    conteudo_final.append("")
+
+    # --- Item 7: Atividades Futuras ---
+    conteudo_final.append("7. ATIVIDADES FUTURAS")
     if ativ_futuras_linhas:
         for linha in ativ_futuras_linhas:
             conteudo_final.append(linha)
@@ -1071,15 +1230,7 @@ def criar_google_doc(creds, titulo_doc, num_fmt, ref_date,
         conteudo_final.append(" ________________________________________________")
     conteudo_final.append("")
 
-    conteudo_final.append("7. SU")
-    if su.strip():
-        for i, linha in enumerate([l for l in su.strip().split("\n") if l.strip()], 1):
-            conteudo_final.append(f" {i}. {linha.strip()}")
-    else:
-        conteudo_final.append(" 1. ______________________________________")
-    conteudo_final.append("")
-
-    conteudo_final.append("8. ATIVIDADES PLANEJADAS E NÃO EXECUTADAS")
+    conteudo_final.append("8. ATIVIDADES PLANEJADAS E NAO EXECUTADAS")
     if ativ_nao_exec.strip():
         for i, linha in enumerate([l for l in ativ_nao_exec.strip().split("\n") if l.strip()], 1):
             conteudo_final.append(f" {i}. {linha.strip()}")
@@ -1097,7 +1248,7 @@ def criar_google_doc(creds, titulo_doc, num_fmt, ref_date,
     ])
 
     time.sleep(3)
-    formatar_documento_completo(docs_service, doc_id, rows_sm1, rows_s, rows_s1, bullets_cursos=bullets_cursos, ativ_futuras_linhas=ativ_futuras_linhas)
+    formatar_documento_completo(docs_service, doc_id, rows_sm1, rows_s, rows_s1, bullets_cursos=bullets_cursos, ativ_futuras_linhas=ativ_futuras_linhas, bullets_cursos_info=bullets_cursos_info)
     return doc_id
 
 # =========================================================
@@ -1425,7 +1576,7 @@ def aplicar_formatacao_tabela(docs_service, doc_id, rows, grupos_data, semana_ti
         print(f"Erro coloração description/status: {e}")
 
 
-def formatar_documento_completo(docs_service, doc_id, rows_sm1, rows_s, rows_s1, bullets_cursos=None, ativ_futuras_linhas=None):
+def formatar_documento_completo(docs_service, doc_id, rows_sm1, rows_s, rows_s1, bullets_cursos=None, ativ_futuras_linhas=None, bullets_cursos_info=None):
     doc       = docs_service.documents().get(documentId=doc_id).execute()
     content   = doc['body']['content']
     end_index = content[-1]['endIndex']
@@ -1555,7 +1706,8 @@ def formatar_documento_completo(docs_service, doc_id, rows_sm1, rows_s, rows_s1,
         r"3\.\s+DATAS COMEMORATIVAS",
         r"4\.\s+INSTRU[ÇC][ÃA]O",
         r"5\.\s+FORMATURA GERAL",
-        r"6\.\s+ATIVIDADES FUTURAS",
+        r"6\.\s+PROJETOS E OBRAS",
+        r"7\.\s+ATIVIDADES FUTURAS",
     ]
 
     for element in content:
@@ -1628,50 +1780,47 @@ def formatar_documento_completo(docs_service, doc_id, rows_sm1, rows_s, rows_s1,
         if not full3 or ' - ' not in raw_txt:
             continue
 
-        # ✅ Colorir militares (§§§...§§§) em vermelho-marrom (apenas em cursos)
-        if dentro_cursos and '§§§' in raw_txt:
-            abs_mil_ini = raw_txt.find('§§§')
-            abs_mil_fim = raw_txt.rfind('§§§')
-            if abs_mil_ini >= 0 and abs_mil_fim > abs_mil_ini:
-                color_mil_start = p_start3 + abs_mil_ini
-                color_mil_end   = p_start3 + abs_mil_fim
-                if color_mil_end > color_mil_start:
-                    reqs3.append({'updateTextStyle': {
-                        'range': {'startIndex': color_mil_start, 'endIndex': color_mil_end},
-                        'textStyle': {
-                            'foregroundColor': {'color': {'rgbColor': verm_marrom}},
-                            'bold': True,
-                        },
-                        'fields': 'foregroundColor,bold'
-                    }})
-            # Colorir o restante (antes dos §§§) em azul
-            abs_sep = raw_txt.find(' - ')
-            if abs_sep >= 0:
-                color_start = p_start3 + abs_sep + 3
-                color_end   = p_start3 + abs_mil_ini
-                if color_end > color_start:
-                    reqs3.append({'updateTextStyle': {
-                        'range': {'startIndex': color_start, 'endIndex': color_end},
-                        'textStyle': {
-                            'foregroundColor': {'color': {'rgbColor': azul_rgb}},
-                            'bold': True,
-                        },
-                        'fields': 'foregroundColor,bold'
-                    }})
-        else:
-            # Colorir tudo após " - " em azul (sem militares marcados)
-            abs_sep = raw_txt.find(' - ')
-            if abs_sep < 0:
-                continue
-            color_start = p_start3 + abs_sep + 3
-            color_end   = p_end3 - 1
-            if color_end > color_start:
+        # Coloração: após o primeiro " - " vai azul
+        # Se bullets_cursos_info disponível, usa offset_mil preciso para vermelho-marrom
+        primeiro_sep = raw_txt.find(' - ')
+        if primeiro_sep < 0:
+            continue
+
+        color_azul_start = p_start3 + primeiro_sep + 3
+        color_azul_end   = p_end3 - 1
+
+        # Tentar encontrar offset_mil via bullets_cursos_info
+        offset_mil = None
+        if dentro_cursos and bullets_cursos_info:
+            texto_para = full3.strip()
+            for info in bullets_cursos_info:
+                t = info['texto'].strip()
+                if t and texto_para.startswith(t[:30]):
+                    offset_mil = info['offset_mil']
+                    break
+
+        if dentro_cursos and offset_mil is not None:
+            color_azul_end  = p_start3 + offset_mil - 3   # até antes do " - " dos militares
+            color_mil_start = p_start3 + offset_mil
+            color_mil_end   = p_end3 - 1
+            if color_azul_end > color_azul_start:
                 reqs3.append({'updateTextStyle': {
-                    'range': {'startIndex': color_start, 'endIndex': color_end},
-                    'textStyle': {
-                        'foregroundColor': {'color': {'rgbColor': azul_rgb}},
-                        'bold': True,
-                    },
+                    'range': {'startIndex': color_azul_start, 'endIndex': color_azul_end},
+                    'textStyle': {'foregroundColor': {'color': {'rgbColor': azul_rgb}}, 'bold': True},
+                    'fields': 'foregroundColor,bold'
+                }})
+            if color_mil_end > color_mil_start:
+                reqs3.append({'updateTextStyle': {
+                    'range': {'startIndex': color_mil_start, 'endIndex': color_mil_end},
+                    'textStyle': {'foregroundColor': {'color': {'rgbColor': verm_marrom}}, 'bold': True},
+                    'fields': 'foregroundColor,bold'
+                }})
+        else:
+            # Sem militares ou atividades futuras: tudo após o primeiro " - " em azul
+            if color_azul_end > color_azul_start:
+                reqs3.append({'updateTextStyle': {
+                    'range': {'startIndex': color_azul_start, 'endIndex': color_azul_end},
+                    'textStyle': {'foregroundColor': {'color': {'rgbColor': azul_rgb}}, 'bold': True},
                     'fields': 'foregroundColor,bold'
                 }})
 
@@ -1771,6 +1920,7 @@ try:
         fase                = buscar_fase(srv, ini_s, fim_s1) or "Mdd Adm"
         operacoes_linhas    = buscar_operacoes(srv, ini_s, fim_s1)
         ativ_futuras_linhas = buscar_atividades_futuras(srv, fim_s1)
+        proj_obras_dados    = buscar_projetos_obras(srv, ini_s, fim_s1)
 
     linha_qts = f"(QTS nº {num_fmt} - SI: {si} - FASE: {fase})"
 
@@ -1785,7 +1935,8 @@ try:
         for linha in ativ_futuras_linhas:
             st.write(f"  {linha}")
 
-    bullets_cursos = bullets_periodo(srv, IDS["cursos"], ini_s, fim_s1, incluir_responsavel=True)
+    bullets_cursos_info = bullets_periodo_com_offsets(srv, IDS["cursos"], ini_s, fim_s1)
+    bullets_cursos = [b['texto'] for b in bullets_cursos_info]
     bullets_datas  = bullets_periodo(srv, IDS["datas"],  ini_s, fim_s1)
     feriados       = buscar_feriados(srv, ini_sm1, fim_s1)
 
@@ -1805,6 +1956,8 @@ try:
                     si, fase, operacoes_linhas, bullets_cursos, bullets_datas,
                     rows_sm1, rows_s, rows_s1,
                     ativ_futuras_linhas=ativ_futuras_linhas,
+                    proj_obras_dados=proj_obras_dados,
+                    bullets_cursos_info=bullets_cursos_info,
                     fg=fg,
                     su=st.session_state.get("su_texto", ""),
                     ativ_nao_exec=st.session_state.get("ativ_nao_exec", "")
@@ -1967,7 +2120,16 @@ try:
         st.text_input("5) GS:", key="fg_gs")
         st.text_input("6) Armado e Equipado:", key="fg_armado")
 
-    with st.expander("6. ATIVIDADES FUTURAS", expanded=True):
+    with st.expander("6. PROJETOS E OBRAS", expanded=True):
+        st.caption("📅 Período: S a S+1 — preenchido automaticamente")
+        if proj_obras_dados:
+            linhas_po = formatar_projetos_obras_linhas(proj_obras_dados)
+            for linha in linhas_po:
+                st.markdown(linha)
+        else:
+            st.info("Nenhum evento encontrado na agenda Projetos e Obras.")
+
+    with st.expander("7. ATIVIDADES FUTURAS", expanded=True):
         d_ini_fut = fim_s1 + datetime.timedelta(days=1)
         d_fim_fut = fim_s1 + datetime.timedelta(days=45)
         st.caption(f"📅 Período: {d_ini_fut.strftime('%d/%m/%Y')} a {d_fim_fut.strftime('%d/%m/%Y')} — preenchido automaticamente")
