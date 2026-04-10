@@ -585,24 +585,6 @@ def buscar_operacoes(service, d_ini_s, d_fim_s1):
 # =========================================================
 
 def buscar_projetos_obras(service, d_ini_s, d_fim_s1):
-    """
-    Lê a agenda Projetos e Obras.
-    Estrutura do evento (conforme print):
-      Titulo:    "Missao | VM Cohatrac | PNR 3o Sgt ELIDA"
-      Local:     "VM Cohatrac"
-      Descricao: linhas com chaves:
-                   Inicio: DD/MM/AAAA
-                   Fim: DD/MM/AAAA
-                   Fisc Adm: <missao fiscalizacao>
-                   Vila: <nome da vila militar>
-                   PNR: <nome do PNR>
-                   Pel Obras  (indicador de subunidade)
-
-    Classificacao:
-      - Se descricao tem linha "Fisc Adm:" => item de Fiscalizacao
-      - Se descricao tem linha "PNR:"      => item de PNR
-      (um evento pode ter ambos)
-    """
     d_busca_ini = d_ini_s - datetime.timedelta(days=365)
     d_busca_fim = d_fim_s1 + datetime.timedelta(days=30)
     evs = list_events(service, IDS['proj_obras'], d_busca_ini, d_busca_fim)
@@ -616,68 +598,59 @@ def buscar_projetos_obras(service, d_ini_s, d_fim_s1):
             continue
         if is_all_day and e_date:
             e_date = e_date - datetime.timedelta(days=1)
-        if not ((s_date <= d_fim_s1) and (e_date >= d_ini_s)):
-            continue
 
         descricao_raw = ev.get('description', '') or ''
         local_ev      = limpar_texto(ev.get('location', '')).strip()
 
-        # Extrair datas da descricao (Inicio/Fim) se existirem
-        ini_desc = re.search(r'[Ii]n[ií]cio\s*:\s*(\d{2}/\d{2}/\d{4})', descricao_raw)
-        fim_desc = re.search(r'[Ff]im\s*:\s*(\d{2}/\d{2}/\d{4})', descricao_raw)
+        # Remover HTML e emojis via encode ASCII (preserva letras latinas/acentuadas)
+        desc_ascii = re.sub(r'<[^>]+>', ' ', descricao_raw)
+        desc_ascii = desc_ascii.encode('ascii', 'ignore').decode('ascii')
 
-        if ini_desc and fim_desc:
-            try:
-                s_d = datetime.datetime.strptime(ini_desc.group(1), '%d/%m/%Y').date()
-                e_d = datetime.datetime.strptime(fim_desc.group(1), '%d/%m/%Y').date()
-            except ValueError:
-                s_d, e_d = s_date, e_date
-        else:
-            s_d, e_d = s_date, e_date
-
-        ini_fmt = f"{s_d.day:02d} {formatar_mes_abreviado(s_d)} {str(s_d.year)[-2:]}"
-        fim_fmt = f"{e_d.day:02d} {formatar_mes_abreviado(e_d)} {str(e_d.year)[-2:]}"
-        periodo = f"{ini_fmt} a {fim_fmt}" if e_d != s_d else ini_fmt
-
-        # Extrair campos da descricao linha a linha
+        # Extrair datas, missão, vila e PNR linha por linha
+        s_d = s_date
+        e_d = e_date
         fisc_missao = ''
         vila        = ''
         pnr_nome    = ''
 
-        # Remover tags HTML e emojis da descricao antes de parsear
-        desc_clean = re.sub(r'<[^>]+>', ' ', descricao_raw)
-        desc_clean = re.sub(r'[^-À-ÿ0-9 \-:./,;()\n\r]', '', desc_clean)
-        for linha in desc_clean.replace('\r', '').split('\n'):
-            linha_s = linha.strip()
-            # re.search para tolerar prefixos (icones, espacos)
-            m_fisc = re.search(r'[Ff]isc\s*[Aa]dm\s*:\s*(.*)', linha_s)
-            m_vila = re.search(r'[Vv]ila\s*:\s*(.*)', linha_s)
-            m_pnr  = re.search(r'[Pp][Nn][Rr]\s*:\s*(.*)', linha_s)
-            if m_fisc:
-                fisc_missao = limpar_texto(m_fisc.group(1)).strip()
-            if m_vila:
-                vila = limpar_texto(m_vila.group(1)).strip()
-            if m_pnr:
-                pnr_nome = limpar_texto(m_pnr.group(1)).strip()
+        for linha in desc_ascii.splitlines():
+            ls = linha.strip()
+            if not ls:
+                continue
+            m = re.search(r'[Ii]n[i]cio\s*:\s*(\d{2}/\d{2}/\d{4})', ls)
+            if m:
+                try: s_d = datetime.datetime.strptime(m.group(1), '%d/%m/%Y').date()
+                except ValueError: pass
+            m = re.search(r'[Ff]im\s*:\s*(\d{2}/\d{2}/\d{4})', ls)
+            if m:
+                try: e_d = datetime.datetime.strptime(m.group(1), '%d/%m/%Y').date()
+                except ValueError: pass
+            m = re.search(r'Fisc\s*Adm\s*:\s*(.*)', ls, re.IGNORECASE)
+            if m and m.group(1).strip():
+                fisc_missao = m.group(1).strip()
+            m = re.search(r'Vila\s*:\s*(.*)', ls, re.IGNORECASE)
+            if m and m.group(1).strip():
+                vila = m.group(1).strip()
+            m = re.search(r'PNR\s*:\s*(.*)', ls, re.IGNORECASE)
+            if m and m.group(1).strip():
+                pnr_nome = m.group(1).strip()
 
-        # Vila Militar: preferir campo da descricao, fallback para local do evento
+        # Filtro: evento (com datas da descrição) deve intersectar S-1 a S+1
+        periodo_ini = d_ini_s - datetime.timedelta(days=7)
+        if not ((s_d <= d_fim_s1) and (e_d >= periodo_ini)):
+            continue
+
+        ini_fmt    = f"{s_d.day:02d} {formatar_mes_abreviado(s_d)} {str(s_d.year)[-2:]}"
+        fim_fmt    = f"{e_d.day:02d} {formatar_mes_abreviado(e_d)} {str(e_d.year)[-2:]}"
+        periodo    = f"{ini_fmt} a {fim_fmt}" if e_d != s_d else ini_fmt
         vila_final = vila or local_ev
 
         if fisc_missao:
-            fiscalizacao.append({
-                'periodo': periodo,
-                'missao':  fisc_missao,
-                'local':   vila_final,
-                's_date':  s_d,
-            })
-
+            fiscalizacao.append({'periodo': periodo, 'missao': fisc_missao,
+                                 'local': vila_final, 's_date': s_d})
         if pnr_nome:
-            pnr.append({
-                'periodo': periodo,
-                'nome':    pnr_nome,
-                'local':   vila_final,
-                's_date':  s_d,
-            })
+            pnr.append({'periodo': periodo, 'nome': pnr_nome,
+                        'local': vila_final, 's_date': s_d})
 
     fiscalizacao.sort(key=lambda x: x['s_date'])
     pnr.sort(key=lambda x: x['s_date'])
