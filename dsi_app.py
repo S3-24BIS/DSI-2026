@@ -2180,6 +2180,19 @@ try:
             st.write(f"Período busca: {ini_s - datetime.timedelta(days=365)} a {fim_s1 + datetime.timedelta(days=30)}")
             st.write(f"Fiscalização: {proj_obras_dados['fiscalizacao'] if proj_obras_dados else 'N/A'}")
             st.write(f"PNR: {proj_obras_dados['pnr'] if proj_obras_dados else 'N/A'}")
+            # Debug bruto: mostrar eventos da agenda
+            try:
+                evs_debug = list_events(srv, IDS['proj_obras'],
+                    ini_s - datetime.timedelta(days=365),
+                    fim_s1 + datetime.timedelta(days=30))
+                st.write(f"Total eventos encontrados na agenda: {len(evs_debug)}")
+                for i, ev in enumerate(evs_debug[:5]):
+                    st.write(f"--- Evento {i+1} ---")
+                    st.write(f"Título: {ev.get('summary','')}")
+                    st.write(f"Local: {ev.get('location','')}")
+                    st.code(repr(ev.get('description','')))
+            except Exception as ex:
+                st.error(f"Erro debug: {ex}")
 
     with st.expander("7. ATIVIDADES FUTURAS", expanded=True):
         d_ini_fut = fim_s1 + datetime.timedelta(days=1)
