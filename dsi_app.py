@@ -606,8 +606,8 @@ def buscar_projetos_obras(service, d_ini_s, d_fim_s1):
         # Estratégia: remover caracteres acima de U+2000 (emojis/símbolos)
         # mas abaixo de U+0100 (latin básico + latin-1 supplement) são mantidos
         desc_clean = re.sub(r'<[^>]+>', ' ', descricao_raw)
-        desc_clean = re.sub(r'[ - ]', '', desc_clean)  # remove emojis/símbolos
-        desc_clean = re.sub(r'[𐀀-􏿿]', '', desc_clean)  # remove surrogates
+        desc_clean = re.sub(u'[\u2000-\uffff]', '', desc_clean)
+        desc_clean = re.sub(u'[\U00010000-\U0010FFFF]', '', desc_clean)
 
         s_d = s_date
         e_d = e_date
