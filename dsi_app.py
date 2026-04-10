@@ -590,7 +590,7 @@ def buscar_projetos_obras(service, d_ini_s, d_fim_s1):
     evs = list_events(service, IDS['proj_obras'], d_busca_ini, d_busca_fim)
 
     fiscalizacao = []
-    pnr          = []
+    pnr_dict     = {}   # chave: (periodo, nome, local) — deduplicar PNR
 
     for ev in evs:
         s_date, e_date, is_all_day, _ = parse_start_end(ev)
@@ -602,22 +602,24 @@ def buscar_projetos_obras(service, d_ini_s, d_fim_s1):
         descricao_raw = ev.get('description', '') or ''
         local_ev      = limpar_texto(ev.get('location', '')).strip()
 
-        # Remover HTML e emojis via encode ASCII (preserva letras latinas/acentuadas)
-        desc_ascii = re.sub(r'<[^>]+>', ' ', descricao_raw)
-        desc_ascii = desc_ascii.encode('ascii', 'ignore').decode('ascii')
+        # Remover HTML e emojis preservando letras acentuadas
+        # Estratégia: remover caracteres acima de U+2000 (emojis/símbolos)
+        # mas abaixo de U+0100 (latin básico + latin-1 supplement) são mantidos
+        desc_clean = re.sub(r'<[^>]+>', ' ', descricao_raw)
+        desc_clean = re.sub(r'[ - ]', '', desc_clean)  # remove emojis/símbolos
+        desc_clean = re.sub(r'[𐀀-􏿿]', '', desc_clean)  # remove surrogates
 
-        # Extrair datas, missão, vila e PNR linha por linha
         s_d = s_date
         e_d = e_date
         fisc_missao = ''
         vila        = ''
         pnr_nome    = ''
 
-        for linha in desc_ascii.splitlines():
+        for linha in desc_clean.splitlines():
             ls = linha.strip()
             if not ls:
                 continue
-            m = re.search(r'[Ii]n[i]cio\s*:\s*(\d{2}/\d{2}/\d{4})', ls)
+            m = re.search(r'[Ii]n[ií]cio\s*:\s*(\d{2}/\d{2}/\d{4})', ls)
             if m:
                 try: s_d = datetime.datetime.strptime(m.group(1), '%d/%m/%Y').date()
                 except ValueError: pass
@@ -627,15 +629,15 @@ def buscar_projetos_obras(service, d_ini_s, d_fim_s1):
                 except ValueError: pass
             m = re.search(r'Fisc\s*Adm\s*:\s*(.*)', ls, re.IGNORECASE)
             if m and m.group(1).strip():
-                fisc_missao = m.group(1).strip()
+                fisc_missao = limpar_texto(m.group(1)).strip()
             m = re.search(r'Vila\s*:\s*(.*)', ls, re.IGNORECASE)
             if m and m.group(1).strip():
-                vila = m.group(1).strip()
+                vila = limpar_texto(m.group(1)).strip()
             m = re.search(r'PNR\s*:\s*(.*)', ls, re.IGNORECASE)
             if m and m.group(1).strip():
-                pnr_nome = m.group(1).strip()
+                pnr_nome = limpar_texto(m.group(1)).strip()
 
-        # Filtro: evento (com datas da descrição) deve intersectar S-1 a S+1
+        # Filtro: intersectar S-1 a S+1
         periodo_ini = d_ini_s - datetime.timedelta(days=7)
         if not ((s_d <= d_fim_s1) and (e_d >= periodo_ini)):
             continue
@@ -646,14 +648,26 @@ def buscar_projetos_obras(service, d_ini_s, d_fim_s1):
         vila_final = vila or local_ev
 
         if fisc_missao:
-            fiscalizacao.append({'periodo': periodo, 'missao': fisc_missao,
-                                 'local': vila_final, 's_date': s_d})
+            fiscalizacao.append({
+                'periodo': periodo,
+                'missao':  fisc_missao,
+                'local':   vila_final,
+                's_date':  s_d,
+            })
+
+        # PNR: deduplicar por (periodo, nome, local)
         if pnr_nome:
-            pnr.append({'periodo': periodo, 'nome': pnr_nome,
-                        'local': vila_final, 's_date': s_d})
+            chave = (periodo, pnr_nome, vila_final)
+            if chave not in pnr_dict:
+                pnr_dict[chave] = {
+                    'periodo': periodo,
+                    'nome':    pnr_nome,
+                    'local':   vila_final,
+                    's_date':  s_d,
+                }
 
     fiscalizacao.sort(key=lambda x: x['s_date'])
-    pnr.sort(key=lambda x: x['s_date'])
+    pnr = sorted(pnr_dict.values(), key=lambda x: (x['s_date'], x['nome'], x['local']))
     return {'fiscalizacao': fiscalizacao, 'pnr': pnr}
 
 
