@@ -637,9 +637,9 @@ def buscar_projetos_obras(service, d_ini_s, d_fim_s1):
             if m and m.group(1).strip():
                 pnr_nome = limpar_texto(m.group(1)).strip()
 
-        # Filtro: intersectar S-1 a S+1
-        periodo_ini = d_ini_s - datetime.timedelta(days=7)
-        if not ((s_d <= d_fim_s1) and (e_d >= periodo_ini)):
+        # Filtro: mostrar eventos que intersectam S a S+1
+        if not ((s_d <= d_fim_s1) and (e_d >= d_ini_s)):
+            continue
             continue
 
         ini_fmt    = f"{s_d.day:02d} {formatar_mes_abreviado(s_d)} {str(s_d.year)[-2:]}"
