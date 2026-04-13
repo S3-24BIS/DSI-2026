@@ -679,8 +679,6 @@ def formatar_projetos_obras_linhas(dados):
             linha = f"   {item['periodo']}"
             if item['missao']:
                 linha += f": {item['missao']}"
-            if item['local']:
-                linha += f" - {item['local']}"
             linhas.append(linha)
     else:
         linhas.append('   -')
@@ -1221,14 +1219,6 @@ def criar_google_doc(creds, titulo_doc, num_fmt, ref_date,
         conteudo_final.append(" ________________________________________________")
     conteudo_final.append("")
 
-    conteudo_final.append("8. ATIVIDADES PLANEJADAS E NAO EXECUTADAS")
-    if ativ_nao_exec.strip():
-        for i, linha in enumerate([l for l in ativ_nao_exec.strip().split("\n") if l.strip()], 1):
-            conteudo_final.append(f" {i}. {linha.strip()}")
-    else:
-        conteudo_final.append(" ________________________________________________")
-    conteudo_final.append("")
-
     meses_completos = ["janeiro","fevereiro","março","abril","maio","junho",
                        "julho","agosto","setembro","outubro","novembro","dezembro"]
     data_assinatura = f"São Luís, MA, {hoje.day} de {meses_completos[hoje.month-1]} de {hoje.year}"
@@ -1734,7 +1724,9 @@ def formatar_documento_completo(docs_service, doc_id, rows_sm1, rows_s, rows_s1,
 
     SEC_CURSOS  = re.compile(r'^2\.\s+CURSOS', re.IGNORECASE)
     SEC_DATAS   = re.compile(r'^3\.\s+DATAS', re.IGNORECASE)
-    SEC_FUTURAS = re.compile(r'^6\.\s+ATIVIDADES FUTURAS', re.IGNORECASE)
+    SEC_PROJ    = re.compile(r'^6\.\s+PROJETOS', re.IGNORECASE)
+    SEC_FUTURAS = re.compile(r'^7\.\s+ATIVIDADES FUTURAS', re.IGNORECASE)
+    SEC_FIM     = re.compile(r'^(8\.|São Luís)', re.IGNORECASE)
 
     doc3  = docs_service.documents().get(documentId=doc_id).execute()
     cont3 = doc3['body']['content']
@@ -1761,9 +1753,17 @@ def formatar_documento_completo(docs_service, doc_id, rows_sm1, rows_s, rows_s1,
         if SEC_DATAS.search(full3):
             dentro_cursos  = False
             continue
+        if SEC_PROJ.search(full3):
+            dentro_cursos  = False
+            dentro_futuras = False
+            continue
         if SEC_FUTURAS.search(full3):
             dentro_futuras = True
             dentro_cursos  = False
+            continue
+        if SEC_FIM.search(full3):
+            dentro_cursos  = False
+            dentro_futuras = False
             continue
 
         if not (dentro_cursos or dentro_futuras):
