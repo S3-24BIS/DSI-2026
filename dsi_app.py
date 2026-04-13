@@ -1026,7 +1026,7 @@ def construir_tabela_semana(service, d_ini, d_fim, incluir_cmt, incluir_pgi, fer
                     "AGENDA":      resp,
                     "OBS":         "",
                     "STATUS":      "☐ Realizado\n☐ Histórico\n☐ Reagendado",
-                    "_especial":   eh_especial if i == 0 else False,
+                    "_especial":   eh_especial,  # todas as linhas do dia recebem a flag
                     "_tem_desc":   bool(descricao),
                 })
 
@@ -1411,10 +1411,10 @@ def aplicar_formatacao_tabela(docs_service, doc_id, rows, grupos_data, semana_ti
     cor_alternada = True
     for data, indices in grupos_data.items():
         eh_dia_especial = any(rows[idx].get('_especial', False) for idx in indices)
-        if eh_dia_especial:
-            cor = {'red': 1.0, 'green': 0.8, 'blue': 0.8}
-        else:
-            cor = {'red': 0.85, 'green': 0.85, 'blue': 0.85} if cor_alternada else {'red': 1.0, 'green': 1.0, 'blue': 1.0}
+        # Cor base: cinza ou branco alternado — sempre alterna, especial ou não
+        cor_base = {'red': 0.85, 'green': 0.85, 'blue': 0.85} if cor_alternada else {'red': 1.0, 'green': 1.0, 'blue': 1.0}
+        # Dias especiais (FDS/feriado): vermelho claro, sobrepõe a cor base
+        cor = {'red': 1.0, 'green': 0.8, 'blue': 0.8} if eh_dia_especial else cor_base
         for idx in indices:
             for col_idx in range(n_cols_tab):
                 requests.append({'updateTableCellStyle': {
@@ -1422,8 +1422,8 @@ def aplicar_formatacao_tabela(docs_service, doc_id, rows, grupos_data, semana_ti
                     'tableCellStyle': {'backgroundColor': {'color': {'rgbColor': cor}}},
                     'fields': 'backgroundColor'
                 }})
-        if not eh_dia_especial:
-            cor_alternada = not cor_alternada
+        # Sempre alterna — dias especiais não quebram o padrão dos dias normais
+        cor_alternada = not cor_alternada
 
     # ✅ MELHORIA: padding lateral de 0,5 cm (14,17 PT) em todas as células
     for row_idx in range(len(tabela.get('tableRows', []))):
