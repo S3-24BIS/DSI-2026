@@ -19,12 +19,10 @@ from googleapiclient.errors import HttpError
 # CONFIGURAÇÕES
 # =========================================================
 
-from dsi_config import GOOGLE_SCOPES, get_all_users, RESP_MAP
+from dsi_config import GOOGLE_SCOPES, IDS, RESP_MAP
 from dsi_utils import cache_with_ttl, logger
 
 SCOPES = GOOGLE_SCOPES
-
-IDS = get_all_users()
 
 MEU_EMAIL = IDS.get("s3", "s3.24bis03@gmail.com")
 

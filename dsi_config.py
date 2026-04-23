@@ -55,6 +55,7 @@ CALENDARIOS = {
     "proj_obras": os.getenv("DSI_CAL_OBRAS", "ff0f90677f41394c1caebe925fdebda1e69ab47b7d114cbae6a7c8feccaeeef3@group.calendar.google.com"),
 }
 
+
 RESP_MAP = {
     **{v: "Cmt" for k, v in ESTADO_MAIOR.items()},
     **{v: "Seção" for k, v in SECOES.items()},
@@ -93,3 +94,9 @@ def get_user_email(user_key: str) -> str:
     """Obtém email de um usuário por chave"""
     all_users = get_all_users()
     return all_users.get(user_key, "")
+
+# IDS combina usuários e calendários - usado por dsi_app.py
+IDS = {
+    **get_all_users(),
+    **CALENDARIOS,
+}
