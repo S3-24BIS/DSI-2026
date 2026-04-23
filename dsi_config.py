@@ -1,3 +1,2 @@
-git add dsi_config.py
-git commit -m "Fix: remove comandos git do arquivo"
+git checkout dsi_config.py dsi_app.py
 git push
