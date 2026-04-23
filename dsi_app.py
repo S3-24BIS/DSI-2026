@@ -1344,17 +1344,18 @@ def aplicar_formatacao_tabela(docs_service, doc_id, rows, grupos_data, semana_ti
         # Sempre alterna — dias especiais não quebram o padrão dos dias normais
         cor_alternada = not cor_alternada
 
-    # ✅ MELHORIA: padding lateral de 0,5 cm (14,17 PT) em todas as células
+    # ✅ MELHORIA: Alinhamento vertical centralizado + padding 0,1 cm em todas as células (2.84 PT)
+    padding_01cm = 2.84  # 0.1 cm = 2.84 PT
     for row_idx in range(len(tabela.get('tableRows', []))):
         for col_idx in range(n_cols_tab):
             requests.append({'updateTableCellStyle': {
                 'tableRange': {'tableCellLocation': {'tableStartLocation': {'index': table_start}, 'rowIndex': row_idx, 'columnIndex': col_idx}, 'rowSpan': 1, 'columnSpan': 1},
                 'tableCellStyle': {
                     'contentAlignment': 'MIDDLE',
-                    'paddingTop':    {'magnitude': 2,     'unit': 'PT'},
-                    'paddingBottom': {'magnitude': 2,     'unit': 'PT'},
-                    'paddingLeft':   {'magnitude': 14.17, 'unit': 'PT'},
-                    'paddingRight':  {'magnitude': 14.17, 'unit': 'PT'},
+                    'paddingTop':    {'magnitude': padding_01cm, 'unit': 'PT'},
+                    'paddingBottom': {'magnitude': padding_01cm, 'unit': 'PT'},
+                    'paddingLeft':   {'magnitude': padding_01cm, 'unit': 'PT'},
+                    'paddingRight':  {'magnitude': padding_01cm, 'unit': 'PT'},
                 },
                 'fields': 'contentAlignment,paddingTop,paddingBottom,paddingLeft,paddingRight'
             }})
