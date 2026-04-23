@@ -19,14 +19,12 @@ from googleapiclient.errors import HttpError
 # CONFIGURAÇÕES
 # =========================================================
 
-SCOPES = [
-    "https://www.googleapis.com/auth/calendar.readonly",
-    "https://www.googleapis.com/auth/documents",
-    "https://www.googleapis.com/auth/drive.file",
-]
+from dsi_config import GOOGLE_SCOPES, get_all_users
+from dsi_utils import cache_with_ttl, logger
 
-IDS = {
-    # ── Estado-Maior / Comando ──────────────────────────────
+SCOPES = GOOGLE_SCOPES
+
+IDS = get_all_users()  # ── Estado-Maior / Comando ──────────────────────────────
     "s3":        "s3.24bis03@gmail.com",
     "cmt":       "comando24bis@gmail.com",
     "cmdo":      "cmdo24bis@gmail.com",
