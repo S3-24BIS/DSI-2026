@@ -55,7 +55,6 @@ CALENDARIOS = {
     "proj_obras": os.getenv("DSI_CAL_OBRAS", "ff0f90677f41394c1caebe925fdebda1e69ab47b7d114cbae6a7c8feccaeeef3@group.calendar.google.com"),
 }
 
-
 RESP_MAP = {
     **{v: "Cmt" for k, v in ESTADO_MAIOR.items()},
     **{v: "Seção" for k, v in SECOES.items()},
