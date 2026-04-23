@@ -9,6 +9,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+import streamlit as st
+try:
+    IDS = st.secrets.get("IDS", {})
+except:
+    IDS = {}
+
 ESTADO_MAIOR = {
     "s3": os.getenv("DSI_S3_EMAIL", "s3.24bis03@gmail.com"),
     "cmt": os.getenv("DSI_CMT_EMAIL", "comando24bis@gmail.com"),
