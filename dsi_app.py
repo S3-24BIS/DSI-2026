@@ -19,12 +19,80 @@ from googleapiclient.errors import HttpError
 # CONFIGURAÇÕES
 # =========================================================
 
-from dsi_config import GOOGLE_SCOPES, IDS, RESP_MAP
-from dsi_utils import cache_with_ttl, logger
+SCOPES = [
+    "https://www.googleapis.com/auth/calendar.readonly",
+    "https://www.googleapis.com/auth/documents",
+    "https://www.googleapis.com/auth/drive.file",
+]
 
-SCOPES = GOOGLE_SCOPES
+IDS = {
+    # ── Estado-Maior / Comando ──────────────────────────────
+    "s3":        "s3.24bis03@gmail.com",
+    "cmt":       "comando24bis@gmail.com",
+    "cmdo":      "cmdo24bis@gmail.com",
+    "sub_cmt":   "subcomandante.24bis@gmail.com",
+    "adj_cmdo":  "gleysonsmelo141214@gmail.com",
+    "sec_1":     "primeira1secao@gmail.com",
+    "sec_4":     "4secao24bis@gmail.com",
+    # ── Subunidades ────────────────────────────────────────
+    "cia_1":     "1cia.24bis@gmail.com",
+    "cia_1b":    "gurupi1cia@gmail.com",
+    "cia_1_sgt": "sargenteacaogurupi@gmail.com",
+    "cia_2":     "jfsa2017@gmail.com",
+    "cia_2b":    "timbira2cia@gmail.com",
+    "cia_2_sgt": "sgtetimbira@gmail.com",
+    "b_mus":     "bmus24bis@gmail.com",
+    "npor":      "npor.24bis.instrutor@gmail.com",
+    "npor_ste":  "allissonfeitosa1985@gmail.com",
+    # ── Órgãos de apoio ────────────────────────────────────
+    "ass_jur":   "assjur.24bis@gmail.com",
+    "brigada":   "brigada24bis@gmail.com",
+    "fisc_adm":  "capmarcusvinicius.40bi@gmail.com",
+    "chales":    "cmslchales@gmail.com",
+    "com_soc":   "comsoc24bis@gmail.com",
+    "fiscal":    "fiscal160105@gmail.com",
+    "prm":       "prmsaoluisma@gmail.com",
+    "sfpc":      "sfpc24bis@gmail.com",
+    # ── Agendas de grupo (Google Calendar IDs) ─────────────
+    "pgi":       "915a351ec7e277234d1da0e597fb14c7455f6f1a5a05eea8de837095a6e70c9e@group.calendar.google.com",
+    "cursos":    "38d1be36abd6b1e2545500964d51074f66d24c36530a3ff677ef21b6b332f003@group.calendar.google.com",
+    "datas":     "c9905256a40d19cc4d9954f633783c1ee96f6ad70165b5b7800b63e31ceeef1f@group.calendar.google.com",
+    "si":        "d140cd6bbf50cb6e5754222732d27f20e9ee833aca680475c0f1f34e0df74fa0@group.calendar.google.com",
+    "fase":      "ac05541df4fd8c2dff7eeebe910442a84fd43a9ade0a8699b1d96cf6e2986d1e@group.calendar.google.com",
+    "operacoes": "a253be647f9dd8c1b044f0e89643a569d95cbd9054f4eb8401c373a4cb2dd667@group.calendar.google.com",
+    "proj_obras":"ff0f90677f41394c1caebe925fdebda1e69ab47b7d114cbae6a7c8feccaeeef3@group.calendar.google.com",
+}
 
-MEU_EMAIL = IDS.get("s3", "s3.24bis03@gmail.com")
+# Mapa email → rótulo da coluna AG
+RESP_MAP = {
+    IDS["cmt"]:      "Cmt",
+    IDS["cmdo"]:     "Cmt",       # Cmdo = Cmt
+    IDS["sub_cmt"]:  "Sub Cmt",
+    IDS["adj_cmdo"]: "Adj Cmdo",
+    IDS["sec_1"]:    "1ª Seção",
+    IDS["sec_4"]:    "4ª Seção",
+    IDS["cia_1"]:    "1ª Cia",
+    IDS["cia_1b"]:   "1ª Cia",
+    IDS["cia_1_sgt"]:"1ª Cia",    # simplificado
+    IDS["cia_2"]:    "2ª Cia",
+    IDS["cia_2b"]:   "2ª Cia",
+    IDS["cia_2_sgt"]:"2ª Cia",    # simplificado
+    IDS["b_mus"]:    "B Mus",
+    IDS["npor"]:     "NPOR",
+    IDS["npor_ste"]: "NPOR (STE)",
+    IDS["ass_jur"]:  "Ass Jur",
+    IDS["brigada"]:  "Brigada",
+    IDS["fisc_adm"]: "Fisc Adm",
+    IDS["chales"]:   "Chales",
+    IDS["com_soc"]:  "Com Soc",
+    IDS["fiscal"]:   "B Adm",     # fiscal160105@gmail.com = B Adm
+    IDS["prm"]:      "PRM",
+    IDS["sfpc"]:     "SFPC",
+    IDS["pgi"]:      "PGI",
+    IDS["s3"]:       "S3",
+}
+
+MEU_EMAIL = IDS["s3"]
 
 # =========================================================
 # RETRY COM BACKOFF EXPONENCIAL
@@ -844,20 +912,33 @@ def buscar_atividades_futuras(service, fim_s1: datetime.date) -> list:
 # TABELAS
 # =========================================================
 
-PRIORIDADE_RESP = {}
-for key, email in IDS.items():
-    priority_map = {
-        "npor": 1, "npor_ste": 2, "b_mus": 3,
-        "cia_1": 4, "cia_1b": 4, "cia_1_sgt": 5,
-        "cia_2": 6, "cia_2b": 6, "cia_2_sgt": 7,
-        "sec_1": 8, "sec_4": 9, "sfpc": 10,
-        "fisc_adm": 11, "fiscal": 12, "ass_jur": 13,
-        "com_soc": 14, "prm": 15, "brigada": 16,
-        "chales": 17, "adj_cmdo": 18, "sub_cmt": 19,
-        "cmdo": 20, "cmt": 21, "s3": 99,
-    }
-    if key in priority_map:
-        PRIORIDADE_RESP[email] = priority_map[key]
+PRIORIDADE_RESP = {
+    IDS["npor"]:     1,
+    IDS["npor_ste"]: 2,
+    IDS["b_mus"]:    3,
+    IDS["cia_1"]:    4,
+    IDS["cia_1b"]:   4,
+    IDS["cia_1_sgt"]:5,
+    IDS["cia_2"]:    6,
+    IDS["cia_2b"]:   6,
+    IDS["cia_2_sgt"]:7,
+    IDS["sec_1"]:    8,
+    IDS["sec_4"]:    9,
+    IDS["sfpc"]:     10,
+    IDS["fisc_adm"]: 11,
+    IDS["fiscal"]:   12,
+    IDS["ass_jur"]:  13,
+    IDS["com_soc"]:  14,
+    IDS["prm"]:      15,
+    IDS["brigada"]:  16,
+    IDS["chales"]:   17,
+    IDS["adj_cmdo"]: 18,
+    IDS["sub_cmt"]:  19,
+    IDS["cmdo"]:     20,
+    IDS["cmt"]:      21,
+    IDS["pgi"]:      22,
+    IDS["s3"]:       99,
+}
 
 AGENDAS_TABELA = [
     "s3", "cmt", "cmdo", "sub_cmt", "adj_cmdo",
@@ -1344,18 +1425,17 @@ def aplicar_formatacao_tabela(docs_service, doc_id, rows, grupos_data, semana_ti
         # Sempre alterna — dias especiais não quebram o padrão dos dias normais
         cor_alternada = not cor_alternada
 
-    # ✅ MELHORIA: Alinhamento vertical centralizado + padding 0,1 cm em todas as células (2.84 PT)
-    padding_01cm = 2.84  # 0.1 cm = 2.84 PT
+    # ✅ MELHORIA: padding lateral de 0,5 cm (14,17 PT) em todas as células
     for row_idx in range(len(tabela.get('tableRows', []))):
         for col_idx in range(n_cols_tab):
             requests.append({'updateTableCellStyle': {
                 'tableRange': {'tableCellLocation': {'tableStartLocation': {'index': table_start}, 'rowIndex': row_idx, 'columnIndex': col_idx}, 'rowSpan': 1, 'columnSpan': 1},
                 'tableCellStyle': {
                     'contentAlignment': 'MIDDLE',
-                    'paddingTop':    {'magnitude': padding_01cm, 'unit': 'PT'},
-                    'paddingBottom': {'magnitude': padding_01cm, 'unit': 'PT'},
-                    'paddingLeft':   {'magnitude': padding_01cm, 'unit': 'PT'},
-                    'paddingRight':  {'magnitude': padding_01cm, 'unit': 'PT'},
+                    'paddingTop':    {'magnitude': 2,     'unit': 'PT'},
+                    'paddingBottom': {'magnitude': 2,     'unit': 'PT'},
+                    'paddingLeft':   {'magnitude': 14.17, 'unit': 'PT'},
+                    'paddingRight':  {'magnitude': 14.17, 'unit': 'PT'},
                 },
                 'fields': 'contentAlignment,paddingTop,paddingBottom,paddingLeft,paddingRight'
             }})
