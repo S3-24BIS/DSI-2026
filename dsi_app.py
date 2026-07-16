@@ -4,6 +4,7 @@ import io
 import json
 import time
 import random
+import os
 from concurrent.futures import ThreadPoolExecutor
 
 import streamlit as st
@@ -14,6 +15,7 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+from googleapiclient.http import MediaFileUpload
 
 # =========================================================
 # CONFIGURAÇÕES
@@ -1093,6 +1095,116 @@ def salvar_historico(num_dsi: int, periodo: str, doc_id: str):
 # GOOGLE DOCS
 # =========================================================
 
+# =========================================================
+# CABEÇALHO COM BRASÃO E RODAPÉ AUTOMÁTICO
+# =========================================================
+
+ARQUIVO_BRASAO = "brasao_republica.png"
+
+def obter_url_publica_brasao(creds):
+    """Envia o brasão ao Drive uma única vez e devolve uma URL pública para o Docs."""
+    if not os.path.exists(ARQUIVO_BRASAO):
+        raise FileNotFoundError(
+            f"Arquivo '{ARQUIVO_BRASAO}' não encontrado. "
+            "Coloque a imagem na raiz do repositório."
+        )
+
+    drive_service = build('drive', 'v3', credentials=creds)
+    nome_drive = "brasao_republica_dsi.png"
+
+    busca = drive_service.files().list(
+        q=f"name='{nome_drive}' and trashed=false",
+        spaces='drive',
+        fields='files(id,name)',
+        pageSize=10
+    ).execute()
+    arquivos = busca.get('files', [])
+
+    if arquivos:
+        file_id = arquivos[0]['id']
+    else:
+        media = MediaFileUpload(ARQUIVO_BRASAO, mimetype='image/png', resumable=False)
+        criado = drive_service.files().create(
+            body={'name': nome_drive},
+            media_body=media,
+            fields='id'
+        ).execute()
+        file_id = criado['id']
+
+        drive_service.permissions().create(
+            fileId=file_id,
+            body={'type': 'anyone', 'role': 'reader'}
+        ).execute()
+
+    return f"https://drive.google.com/uc?export=view&id={file_id}"
+
+def formatar_periodo_rodape(ini, fim):
+    ini_txt = f"{ini.day} {formatar_mes_abreviado(ini)} {str(ini.year)[-2:]}"
+    fim_txt = f"{fim.day} {formatar_mes_abreviado(fim)} {str(fim.year)[-2:]}"
+    return f"{ini_txt} a {fim_txt}"
+
+def adicionar_brasao_e_rodape(docs_service, creds, doc_id, num_fmt, ini_s1, fim_s1):
+    """Insere o brasão no cabeçalho e um rodapé automático com DSI e período."""
+    respostas = docs_service.documents().batchUpdate(
+        documentId=doc_id,
+        body={'requests': [
+            {'createHeader': {'type': 'DEFAULT'}},
+            {'createFooter': {'type': 'DEFAULT'}},
+        ]}
+    ).execute().get('replies', [])
+
+    header_id = respostas[0]['createHeader']['headerId']
+    footer_id = respostas[1]['createFooter']['footerId']
+    url_brasao = obter_url_publica_brasao(creds)
+
+    periodo = formatar_periodo_rodape(ini_s1, fim_s1)
+    texto_rodape = (
+        f"Diretriz Semanal de Instrução {num_fmt} ({periodo})"
+        "............................................................1"
+    )
+
+    reqs = [
+        {'insertInlineImage': {
+            'location': {'segmentId': header_id, 'index': 0},
+            'uri': url_brasao,
+            'objectSize': {
+                'height': {'magnitude': 42, 'unit': 'PT'},
+                'width':  {'magnitude': 42, 'unit': 'PT'},
+            }
+        }},
+        {'updateParagraphStyle': {
+            'range': {'segmentId': header_id, 'startIndex': 0, 'endIndex': 1},
+            'paragraphStyle': {'alignment': 'CENTER'},
+            'fields': 'alignment'
+        }},
+        {'insertText': {
+            'location': {'segmentId': footer_id, 'index': 0},
+            'text': texto_rodape
+        }},
+        {'updateParagraphStyle': {
+            'range': {
+                'segmentId': footer_id,
+                'startIndex': 0,
+                'endIndex': len(texto_rodape)
+            },
+            'paragraphStyle': {'alignment': 'CENTER'},
+            'fields': 'alignment'
+        }},
+        {'updateTextStyle': {
+            'range': {
+                'segmentId': footer_id,
+                'startIndex': 0,
+                'endIndex': len(texto_rodape)
+            },
+            'textStyle': {
+                'fontSize': {'magnitude': 8, 'unit': 'PT'},
+                'weightedFontFamily': {'fontFamily': 'Arial'}
+            },
+            'fields': 'fontSize,weightedFontFamily'
+        }},
+    ]
+    batch_update_com_retry(docs_service, doc_id, reqs)
+
 def criar_google_doc(creds, titulo_doc, num_fmt, ref_date,
                      ini_sm1, fim_sm1, ini_s, fim_s, ini_s1, fim_s1,
                      si, fase, operacoes_linhas, bullets_cursos, bullets_datas,
@@ -1105,6 +1217,10 @@ def criar_google_doc(creds, titulo_doc, num_fmt, ref_date,
     doc    = docs_service.documents().create(body={'title': titulo_doc}).execute()
     doc_id = doc['documentId']
     hoje   = datetime.date.today()
+
+    adicionar_brasao_e_rodape(
+        docs_service, creds, doc_id, num_fmt, ini_s1, fim_s1
+    )
 
     conteudo = []
     conteudo.append(f"DSI Nº {num_fmt} - S3/24º BIS")
@@ -1425,17 +1541,17 @@ def aplicar_formatacao_tabela(docs_service, doc_id, rows, grupos_data, semana_ti
         # Sempre alterna — dias especiais não quebram o padrão dos dias normais
         cor_alternada = not cor_alternada
 
-    # ✅ MELHORIA: padding lateral de 0,5 cm (14,17 PT) em todas as células
+    # Preenchimento interno de 0,021 cm (aprox. 0,60 PT) em todas as células
     for row_idx in range(len(tabela.get('tableRows', []))):
         for col_idx in range(n_cols_tab):
             requests.append({'updateTableCellStyle': {
                 'tableRange': {'tableCellLocation': {'tableStartLocation': {'index': table_start}, 'rowIndex': row_idx, 'columnIndex': col_idx}, 'rowSpan': 1, 'columnSpan': 1},
                 'tableCellStyle': {
                     'contentAlignment': 'MIDDLE',
-                    'paddingTop':    {'magnitude': 2,     'unit': 'PT'},
-                    'paddingBottom': {'magnitude': 2,     'unit': 'PT'},
-                    'paddingLeft':   {'magnitude': 14.17, 'unit': 'PT'},
-                    'paddingRight':  {'magnitude': 14.17, 'unit': 'PT'},
+                    'paddingTop':    {'magnitude': 0.60, 'unit': 'PT'},
+                    'paddingBottom': {'magnitude': 0.60, 'unit': 'PT'},
+                    'paddingLeft':   {'magnitude': 0.60, 'unit': 'PT'},
+                    'paddingRight':  {'magnitude': 0.60, 'unit': 'PT'},
                 },
                 'fields': 'contentAlignment,paddingTop,paddingBottom,paddingLeft,paddingRight'
             }})
@@ -1452,14 +1568,16 @@ def aplicar_formatacao_tabela(docs_service, doc_id, rows, grupos_data, semana_ti
             break
     if tabela_atualizada:
         reqs_center = []
-        for row in tabela_atualizada['table']['tableRows']:
-            for cell in row.get('tableCells', []):
+        for row_idx, row in enumerate(tabela_atualizada['table']['tableRows']):
+            for col_idx, cell in enumerate(row.get('tableCells', [])):
+                # Cabeçalho sempre centralizado; ATIVIDADE e LOCAL à esquerda nas demais linhas.
+                alinhamento = 'CENTER' if row_idx == 0 or col_idx not in (2, 3) else 'START'
                 for para in cell.get('content', []):
                     p_s = para.get('startIndex')
                     p_e = para.get('endIndex')
                     if p_s is not None and p_e is not None and p_e > p_s + 1:
                         reqs_center.append({'updateParagraphStyle': {
-                            'paragraphStyle': {'alignment': 'CENTER'},
+                            'paragraphStyle': {'alignment': alinhamento},
                             'fields': 'alignment',
                             'range': {'startIndex': p_s, 'endIndex': p_e - 1}
                         }})
