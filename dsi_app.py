@@ -14,8 +14,8 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
+from googleapiclient.errors import HttpError
 
 # =========================================================
 # CONFIGURAÇÕES
@@ -1096,17 +1096,19 @@ def salvar_historico(num_dsi: int, periodo: str, doc_id: str):
 # =========================================================
 
 # =========================================================
-# CABEÇALHO COM BRASÃO E RODAPÉ AUTOMÁTICO
+# BRASÃO NA PRIMEIRA PÁGINA E RODAPÉ AUTOMÁTICO
 # =========================================================
 
 ARQUIVO_BRASAO = "brasao_republica.png"
 
+
 def obter_url_publica_brasao(creds):
-    """Envia o brasão ao Drive uma única vez e devolve uma URL pública para o Docs."""
-    if not os.path.exists(ARQUIVO_BRASAO):
+    """Envia o brasão ao Google Drive uma vez e devolve uma URL acessível ao Docs."""
+    caminho = os.path.join(os.path.dirname(os.path.abspath(__file__)), ARQUIVO_BRASAO)
+    if not os.path.exists(caminho):
         raise FileNotFoundError(
             f"Arquivo '{ARQUIVO_BRASAO}' não encontrado. "
-            "Coloque a imagem na raiz do repositório."
+            "Coloque o PNG na mesma pasta do dsi_app.py."
         )
 
     drive_service = build('drive', 'v3', credentials=creds)
@@ -1123,7 +1125,7 @@ def obter_url_publica_brasao(creds):
     if arquivos:
         file_id = arquivos[0]['id']
     else:
-        media = MediaFileUpload(ARQUIVO_BRASAO, mimetype='image/png', resumable=False)
+        media = MediaFileUpload(caminho, mimetype='image/png', resumable=False)
         criado = drive_service.files().create(
             body={'name': nome_drive},
             media_body=media,
@@ -1131,52 +1133,71 @@ def obter_url_publica_brasao(creds):
         ).execute()
         file_id = criado['id']
 
+    # Garante que o Google Docs consiga buscar a imagem.
+    try:
         drive_service.permissions().create(
             fileId=file_id,
             body={'type': 'anyone', 'role': 'reader'}
         ).execute()
+    except HttpError as e:
+        # Ignora somente quando a permissão pública já existe.
+        if e.resp.status not in (400, 409):
+            raise
 
     return f"https://drive.google.com/uc?export=view&id={file_id}"
 
+
 def formatar_periodo_rodape(ini, fim):
-    ini_txt = f"{ini.day} {formatar_mes_abreviado(ini)} {str(ini.year)[-2:]}"
-    fim_txt = f"{fim.day} {formatar_mes_abreviado(fim)} {str(fim.year)[-2:]}"
+    ini_txt = f"{ini.day:02d} {formatar_mes_abreviado(ini)} {str(ini.year)[-2:]}"
+    fim_txt = f"{fim.day:02d} {formatar_mes_abreviado(fim)} {str(fim.year)[-2:]}"
     return f"{ini_txt} a {fim_txt}"
 
-def adicionar_brasao_e_rodape(docs_service, creds, doc_id, num_fmt, ini_s1, fim_s1):
-    """Insere o brasão no cabeçalho e um rodapé automático com DSI e período."""
-    respostas = docs_service.documents().batchUpdate(
-        documentId=doc_id,
-        body={'requests': [
-            {'createHeader': {'type': 'DEFAULT'}},
-            {'createFooter': {'type': 'DEFAULT'}},
-        ]}
-    ).execute().get('replies', [])
 
-    header_id = respostas[0]['createHeader']['headerId']
-    footer_id = respostas[1]['createFooter']['footerId']
+def adicionar_brasao_primeira_pagina_e_rodape(
+        docs_service, creds, doc_id, num_fmt, ini_s1, fim_s1):
+    """
+    Insere o brasão no corpo do documento, por isso aparece somente na
+    primeira página. Cria também o rodapé padrão em Calibri 10.
+    """
     url_brasao = obter_url_publica_brasao(creds)
 
-    periodo = formatar_periodo_rodape(ini_s1, fim_s1)
-    texto_rodape = (
-        f"Diretriz Semanal de Instrução {num_fmt} ({periodo})"
-        "............................................................1"
-    )
-
-    reqs = [
+    # Brasão grande no início do corpo: 4 cm ≈ 113,39 pt.
+    reqs_brasao = [
         {'insertInlineImage': {
-            'location': {'segmentId': header_id, 'index': 0},
+            'location': {'index': 1},
             'uri': url_brasao,
             'objectSize': {
-                'height': {'magnitude': 42, 'unit': 'PT'},
-                'width':  {'magnitude': 42, 'unit': 'PT'},
+                'height': {'magnitude': 113.39, 'unit': 'PT'},
+                'width':  {'magnitude': 113.39, 'unit': 'PT'},
             }
         }},
-        {'updateParagraphStyle': {
-            'range': {'segmentId': header_id, 'startIndex': 0, 'endIndex': 1},
-            'paragraphStyle': {'alignment': 'CENTER'},
-            'fields': 'alignment'
+        {'insertText': {
+            'location': {'index': 2},
+            'text': '\n'
         }},
+        {'updateParagraphStyle': {
+            'range': {'startIndex': 1, 'endIndex': 3},
+            'paragraphStyle': {
+                'alignment': 'CENTER',
+                'spaceAbove': {'magnitude': 0, 'unit': 'PT'},
+                'spaceBelow': {'magnitude': 3, 'unit': 'PT'},
+            },
+            'fields': 'alignment,spaceAbove,spaceBelow'
+        }},
+    ]
+    batch_update_com_retry(docs_service, doc_id, reqs_brasao)
+
+    resposta = docs_service.documents().batchUpdate(
+        documentId=doc_id,
+        body={'requests': [{'createFooter': {'type': 'DEFAULT'}}]}
+    ).execute()
+    footer_id = resposta['replies'][0]['createFooter']['footerId']
+
+    periodo = formatar_periodo_rodape(ini_s1, fim_s1)
+    texto_base = f"Diretriz Semanal de Instrução {num_fmt} ({periodo})"
+    texto_rodape = texto_base + " " + ("." * 42) + " 1"
+
+    reqs_rodape = [
         {'insertText': {
             'location': {'segmentId': footer_id, 'index': 0},
             'text': texto_rodape
@@ -1197,13 +1218,13 @@ def adicionar_brasao_e_rodape(docs_service, creds, doc_id, num_fmt, ini_s1, fim_
                 'endIndex': len(texto_rodape)
             },
             'textStyle': {
-                'fontSize': {'magnitude': 8, 'unit': 'PT'},
-                'weightedFontFamily': {'fontFamily': 'Arial'}
+                'fontSize': {'magnitude': 10, 'unit': 'PT'},
+                'weightedFontFamily': {'fontFamily': 'Calibri'}
             },
             'fields': 'fontSize,weightedFontFamily'
         }},
     ]
-    batch_update_com_retry(docs_service, doc_id, reqs)
+    batch_update_com_retry(docs_service, doc_id, reqs_rodape)
 
 def criar_google_doc(creds, titulo_doc, num_fmt, ref_date,
                      ini_sm1, fim_sm1, ini_s, fim_s, ini_s1, fim_s1,
@@ -1218,7 +1239,7 @@ def criar_google_doc(creds, titulo_doc, num_fmt, ref_date,
     doc_id = doc['documentId']
     hoje   = datetime.date.today()
 
-    adicionar_brasao_e_rodape(
+    adicionar_brasao_primeira_pagina_e_rodape(
         docs_service, creds, doc_id, num_fmt, ini_s1, fim_s1
     )
 
@@ -1270,8 +1291,13 @@ def criar_google_doc(creds, titulo_doc, num_fmt, ref_date,
 
     texto_completo = "\n".join(conteudo)
 
+    doc_inicio = docs_service.documents().get(documentId=doc_id).execute()
+    indice_inicio_texto = doc_inicio['body']['content'][-1]['endIndex'] - 1
     batch_update_com_retry(docs_service, doc_id, [
-        {'insertText': {'location': {'index': 1}, 'text': texto_completo}}
+        {'insertText': {
+            'location': {'index': indice_inicio_texto},
+            'text': texto_completo
+        }}
     ])
 
     doc_atual = docs_service.documents().get(documentId=doc_id).execute()
@@ -1541,7 +1567,7 @@ def aplicar_formatacao_tabela(docs_service, doc_id, rows, grupos_data, semana_ti
         # Sempre alterna — dias especiais não quebram o padrão dos dias normais
         cor_alternada = not cor_alternada
 
-    # Preenchimento interno de 0,021 cm (aprox. 0,60 PT) em todas as células
+    # ✅ Alinhamento vertical centralizado e preenchimento de 0,021 cm (≈ 0,60 PT)
     for row_idx in range(len(tabela.get('tableRows', []))):
         for col_idx in range(n_cols_tab):
             requests.append({'updateTableCellStyle': {
@@ -1566,23 +1592,38 @@ def aplicar_formatacao_tabela(docs_service, doc_id, rows, grupos_data, semana_ti
         if 'table' in el:
             tabela_atualizada = el
             break
+
+    # ATIVIDADE e LOCAL à esquerda; demais colunas centralizadas.
+    # Todo o conteúdo das três tabelas em Calibri 10.
     if tabela_atualizada:
-        reqs_center = []
-        for row_idx, row in enumerate(tabela_atualizada['table']['tableRows']):
-            for col_idx, cell in enumerate(row.get('tableCells', [])):
-                # Cabeçalho sempre centralizado; ATIVIDADE e LOCAL à esquerda nas demais linhas.
-                alinhamento = 'CENTER' if row_idx == 0 or col_idx not in (2, 3) else 'START'
+        reqs_alinhamento_fonte = []
+        colunas_esquerda = {2, 3}
+        for col_idx in range(n_cols_tab):
+            alinhamento = 'START' if col_idx in colunas_esquerda else 'CENTER'
+            for row in tabela_atualizada['table']['tableRows']:
+                if col_idx >= len(row.get('tableCells', [])):
+                    continue
+                cell = row['tableCells'][col_idx]
                 for para in cell.get('content', []):
                     p_s = para.get('startIndex')
                     p_e = para.get('endIndex')
-                    if p_s is not None and p_e is not None and p_e > p_s + 1:
-                        reqs_center.append({'updateParagraphStyle': {
-                            'paragraphStyle': {'alignment': alinhamento},
-                            'fields': 'alignment',
-                            'range': {'startIndex': p_s, 'endIndex': p_e - 1}
-                        }})
-        if reqs_center:
-            batch_update_com_retry(docs_service, doc_id, reqs_center)
+                    if p_s is None or p_e is None or p_e <= p_s + 1:
+                        continue
+                    reqs_alinhamento_fonte.append({'updateParagraphStyle': {
+                        'paragraphStyle': {'alignment': alinhamento},
+                        'fields': 'alignment',
+                        'range': {'startIndex': p_s, 'endIndex': p_e - 1}
+                    }})
+                    reqs_alinhamento_fonte.append({'updateTextStyle': {
+                        'range': {'startIndex': p_s, 'endIndex': p_e - 1},
+                        'textStyle': {
+                            'fontSize': {'magnitude': 10, 'unit': 'PT'},
+                            'weightedFontFamily': {'fontFamily': 'Calibri'}
+                        },
+                        'fields': 'fontSize,weightedFontFamily'
+                    }})
+        if reqs_alinhamento_fonte:
+            batch_update_com_retry(docs_service, doc_id, reqs_alinhamento_fonte)
 
     time.sleep(0.5)
     doc = docs_service.documents().get(documentId=doc_id).execute()
@@ -1683,7 +1724,7 @@ def formatar_documento_completo(docs_service, doc_id, rows_sm1, rows_s, rows_s1,
 
     requests.append({'updateTextStyle': {
         'range': {'startIndex': 1, 'endIndex': end_index - 1},
-        'textStyle': {'fontSize': {'magnitude': 12, 'unit': 'PT'}, 'weightedFontFamily': {'fontFamily': 'Calibri'}},
+        'textStyle': {'fontSize': {'magnitude': 11, 'unit': 'PT'}, 'weightedFontFamily': {'fontFamily': 'Calibri'}},
         'fields': 'fontSize,weightedFontFamily'
     }})
 
